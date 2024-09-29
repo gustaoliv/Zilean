@@ -1,166 +1,251 @@
-from Business.BoardIntegrationBusiness import BoardIntegrationBusiness
-from Infraestructure.JiraIntegration import JiraIntegration
-
+import os
+import json
 import tkinter
 import tkinter.messagebox
 import customtkinter
+import time
+from Domain.Models.Card import Card
+from Domain.Interfaces.IBoardIntegration import IBoardIntegration
+from Infraestructure.JiraIntegration import JiraIntegration
 
-customtkinter.set_appearance_mode("System")  # Modes: "System" (standard), "Dark", "Light"
-customtkinter.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
+CONFIG_FILE = "config.json"
 
+customtkinter.set_appearance_mode("System")
+customtkinter.set_default_color_theme("blue")
 
 class App(customtkinter.CTk):
     def __init__(self):
         super().__init__()
 
-        # configure window
-        self.title("CustomTkinter complex_example.py")
+        self.title("Jira Time Tracker")
         self.geometry(f"{1100}x{580}")
 
-        # configure grid layout (4x4)
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_columnconfigure((2, 3), weight=0)
-        self.grid_rowconfigure((0, 1, 2), weight=1)
+        # Initialize variables for credentials
+        self.jira_server : str|None = None
+        self.email : str|None = None
+        self.token : str|None = None
 
-        # create sidebar frame with widgets
+        # Timer variables
+        self.running:bool = False
+        self.paused:bool = False
+        self.elapsed_time = 0
+        self.start_time = 0
+        
+        # Initiliaze integration
+        self.jira_integration: IBoardIntegration|None = None
+        self.cards: list[Card] = []
+        self.update_cards()
+
+        # Add initial grid config
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=1)
+
+        # Create frames for settings and main app
+        self.create_settings_screen()
+        self.create_main_screen()
+
+        # Load credentials from file or show settings screen
+        if self.load_credentials():
+            if self.validate_jira_credentials(self.jira_server, self.email, self.token):
+                self.show_main_screen()  # Credentials are valid, go to main screen
+            else:
+                self.show_settings_screen()  # Invalid credentials, show settings
+        else:
+            self.show_settings_screen()  # No saved credentials, show settings
+
+    def create_settings_screen(self):
+        """Create the settings screen where the user inputs Jira credentials."""
+        self.settings_frame = customtkinter.CTkFrame(self, fg_color="transparent")
+        self.settings_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
+
+        self.settings_label = customtkinter.CTkLabel(self.settings_frame, text="Configurações Jira", font=customtkinter.CTkFont(size=20, weight="bold"))
+        self.settings_label.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="ew")
+
+        # Jira server entry
+        self.jira_server_label = customtkinter.CTkLabel(self.settings_frame, text="Jira Server:")
+        self.jira_server_label.grid(row=1, column=0, padx=20, pady=(10, 5), sticky="w")
+        self.jira_server_entry = customtkinter.CTkEntry(self.settings_frame, placeholder_text="https://jira.server.com")
+        self.jira_server_entry.grid(row=2, column=0, padx=20, pady=(0, 10), sticky="ew")
+
+        # User email entry
+        self.email_label = customtkinter.CTkLabel(self.settings_frame, text="User Email:")
+        self.email_label.grid(row=3, column=0, padx=20, pady=(10, 5), sticky="w")
+        self.email_entry = customtkinter.CTkEntry(self.settings_frame, placeholder_text="email@example.com")
+        self.email_entry.grid(row=4, column=0, padx=20, pady=(0, 10), sticky="ew")
+
+        # Access token entry
+        self.token_label = customtkinter.CTkLabel(self.settings_frame, text="Access Token:")
+        self.token_label.grid(row=5, column=0, padx=20, pady=(10, 5), sticky="w")
+        self.token_entry = customtkinter.CTkEntry(self.settings_frame, placeholder_text="Your Jira access token", show="*")
+        self.token_entry.grid(row=6, column=0, padx=20, pady=(0, 10), sticky="ew")
+
+        # Save button
+        self.save_button = customtkinter.CTkButton(self.settings_frame, text="Salvar", command=self.save_credentials)
+        self.save_button.grid(row=7, column=0, padx=20, pady=(20, 10), sticky="ew")
+
+    def create_main_screen(self):
+        """Create the main screen with the timer and card selection."""
+        self.main_frame = customtkinter.CTkFrame(self, fg_color="transparent")
+        
+        # Set up grid configuration to ensure proper layout
+        self.main_frame.grid_columnconfigure(1, weight=1)  # Ensure column 1 expands
+        self.main_frame.grid_rowconfigure(0, weight=1)
+        self.main_frame.grid_rowconfigure(1, weight=1)
+        self.main_frame.grid_rowconfigure(2, weight=1)
+
+        # create sidebar frame
         self.sidebar_frame = customtkinter.CTkFrame(self, width=140, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, rowspan=4, sticky="nsew")
         self.sidebar_frame.grid_rowconfigure(4, weight=1)
-        self.logo_label = customtkinter.CTkLabel(self.sidebar_frame, text="CustomTkinter", font=customtkinter.CTkFont(size=20, weight="bold"))
+        self.logo_label = customtkinter.CTkLabel(self.sidebar_frame, text="Jira Time Tracker", font=customtkinter.CTkFont(size=20, weight="bold"))
         self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
-        self.sidebar_button_1 = customtkinter.CTkButton(self.sidebar_frame, command=self.sidebar_button_event)
+
+        # configurações button
+        self.sidebar_button_1 = customtkinter.CTkButton(self.sidebar_frame, text="Configurações", command=self.show_settings_screen)
         self.sidebar_button_1.grid(row=1, column=0, padx=20, pady=10)
-        self.sidebar_button_2 = customtkinter.CTkButton(self.sidebar_frame, command=self.sidebar_button_event)
-        self.sidebar_button_2.grid(row=2, column=0, padx=20, pady=10)
-        self.sidebar_button_3 = customtkinter.CTkButton(self.sidebar_frame, command=self.sidebar_button_event)
-        self.sidebar_button_3.grid(row=3, column=0, padx=20, pady=10)
+
+        # appearance mode option
         self.appearance_mode_label = customtkinter.CTkLabel(self.sidebar_frame, text="Appearance Mode:", anchor="w")
-        self.appearance_mode_label.grid(row=5, column=0, padx=20, pady=(10, 0))
-        self.appearance_mode_optionemenu = customtkinter.CTkOptionMenu(self.sidebar_frame, values=["Light", "Dark", "System"],
-                                                                       command=self.change_appearance_mode_event)
-        self.appearance_mode_optionemenu.grid(row=6, column=0, padx=20, pady=(10, 10))
-        self.scaling_label = customtkinter.CTkLabel(self.sidebar_frame, text="UI Scaling:", anchor="w")
-        self.scaling_label.grid(row=7, column=0, padx=20, pady=(10, 0))
-        self.scaling_optionemenu = customtkinter.CTkOptionMenu(self.sidebar_frame, values=["80%", "90%", "100%", "110%", "120%"],
-                                                               command=self.change_scaling_event)
-        self.scaling_optionemenu.grid(row=8, column=0, padx=20, pady=(10, 20))
-
-        # create main entry and button
-        self.entry = customtkinter.CTkEntry(self, placeholder_text="CTkEntry")
-        self.entry.grid(row=3, column=1, columnspan=2, padx=(20, 0), pady=(20, 20), sticky="nsew")
-
-        self.main_button_1 = customtkinter.CTkButton(master=self, fg_color="transparent", border_width=2, text_color=("gray10", "#DCE4EE"))
-        self.main_button_1.grid(row=3, column=3, padx=(20, 20), pady=(20, 20), sticky="nsew")
-
-        # create textbox
-        self.textbox = customtkinter.CTkTextbox(self, width=250)
-        self.textbox.grid(row=0, column=1, padx=(20, 0), pady=(20, 0), sticky="nsew")
-
-        # create tabview
-        self.tabview = customtkinter.CTkTabview(self, width=250)
-        self.tabview.grid(row=0, column=2, padx=(20, 0), pady=(20, 0), sticky="nsew")
-        self.tabview.add("CTkTabview")
-        self.tabview.add("Tab 2")
-        self.tabview.add("Tab 3")
-        self.tabview.tab("CTkTabview").grid_columnconfigure(0, weight=1)  # configure grid of individual tabs
-        self.tabview.tab("Tab 2").grid_columnconfigure(0, weight=1)
-
-        self.optionmenu_1 = customtkinter.CTkOptionMenu(self.tabview.tab("CTkTabview"), dynamic_resizing=False,
-                                                        values=["Value 1", "Value 2", "Value Long Long Long"])
-        self.optionmenu_1.grid(row=0, column=0, padx=20, pady=(20, 10))
-        self.combobox_1 = customtkinter.CTkComboBox(self.tabview.tab("CTkTabview"),
-                                                    values=["Value 1", "Value 2", "Value Long....."])
-        self.combobox_1.grid(row=1, column=0, padx=20, pady=(10, 10))
-        self.string_input_button = customtkinter.CTkButton(self.tabview.tab("CTkTabview"), text="Open CTkInputDialog",
-                                                           command=self.open_input_dialog_event)
-        self.string_input_button.grid(row=2, column=0, padx=20, pady=(10, 10))
-        self.label_tab_2 = customtkinter.CTkLabel(self.tabview.tab("Tab 2"), text="CTkLabel on Tab 2")
-        self.label_tab_2.grid(row=0, column=0, padx=20, pady=20)
-
-        # create radiobutton frame
-        self.radiobutton_frame = customtkinter.CTkFrame(self)
-        self.radiobutton_frame.grid(row=0, column=3, padx=(20, 20), pady=(20, 0), sticky="nsew")
-        self.radio_var = tkinter.IntVar(value=0)
-        self.label_radio_group = customtkinter.CTkLabel(master=self.radiobutton_frame, text="CTkRadioButton Group:")
-        self.label_radio_group.grid(row=0, column=2, columnspan=1, padx=10, pady=10, sticky="")
-        self.radio_button_1 = customtkinter.CTkRadioButton(master=self.radiobutton_frame, variable=self.radio_var, value=0)
-        self.radio_button_1.grid(row=1, column=2, pady=10, padx=20, sticky="n")
-        self.radio_button_2 = customtkinter.CTkRadioButton(master=self.radiobutton_frame, variable=self.radio_var, value=1)
-        self.radio_button_2.grid(row=2, column=2, pady=10, padx=20, sticky="n")
-        self.radio_button_3 = customtkinter.CTkRadioButton(master=self.radiobutton_frame, variable=self.radio_var, value=2)
-        self.radio_button_3.grid(row=3, column=2, pady=10, padx=20, sticky="n")
-
-        # create slider and progressbar frame
-        self.slider_progressbar_frame = customtkinter.CTkFrame(self, fg_color="transparent")
-        self.slider_progressbar_frame.grid(row=1, column=1, padx=(20, 0), pady=(20, 0), sticky="nsew")
-        self.slider_progressbar_frame.grid_columnconfigure(0, weight=1)
-        self.slider_progressbar_frame.grid_rowconfigure(4, weight=1)
-        self.seg_button_1 = customtkinter.CTkSegmentedButton(self.slider_progressbar_frame)
-        self.seg_button_1.grid(row=0, column=0, padx=(20, 10), pady=(10, 10), sticky="ew")
-        self.progressbar_1 = customtkinter.CTkProgressBar(self.slider_progressbar_frame)
-        self.progressbar_1.grid(row=1, column=0, padx=(20, 10), pady=(10, 10), sticky="ew")
-        self.progressbar_2 = customtkinter.CTkProgressBar(self.slider_progressbar_frame)
-        self.progressbar_2.grid(row=2, column=0, padx=(20, 10), pady=(10, 10), sticky="ew")
-        self.slider_1 = customtkinter.CTkSlider(self.slider_progressbar_frame, from_=0, to=1, number_of_steps=4)
-        self.slider_1.grid(row=3, column=0, padx=(20, 10), pady=(10, 10), sticky="ew")
-        self.slider_2 = customtkinter.CTkSlider(self.slider_progressbar_frame, orientation="vertical")
-        self.slider_2.grid(row=0, column=1, rowspan=5, padx=(10, 10), pady=(10, 10), sticky="ns")
-        self.progressbar_3 = customtkinter.CTkProgressBar(self.slider_progressbar_frame, orientation="vertical")
-        self.progressbar_3.grid(row=0, column=2, rowspan=5, padx=(10, 20), pady=(10, 10), sticky="ns")
-
-        # create scrollable frame
-        self.scrollable_frame = customtkinter.CTkScrollableFrame(self, label_text="CTkScrollableFrame")
-        self.scrollable_frame.grid(row=1, column=2, padx=(20, 0), pady=(20, 0), sticky="nsew")
-        self.scrollable_frame.grid_columnconfigure(0, weight=1)
-        self.scrollable_frame_switches = []
-        for i in range(100):
-            switch = customtkinter.CTkSwitch(master=self.scrollable_frame, text=f"CTkSwitch {i}")
-            switch.grid(row=i, column=0, padx=10, pady=(0, 20))
-            self.scrollable_frame_switches.append(switch)
-
-        # create checkbox and switch frame
-        self.checkbox_slider_frame = customtkinter.CTkFrame(self)
-        self.checkbox_slider_frame.grid(row=1, column=3, padx=(20, 20), pady=(20, 0), sticky="nsew")
-        self.checkbox_1 = customtkinter.CTkCheckBox(master=self.checkbox_slider_frame)
-        self.checkbox_1.grid(row=1, column=0, pady=(20, 0), padx=20, sticky="n")
-        self.checkbox_2 = customtkinter.CTkCheckBox(master=self.checkbox_slider_frame)
-        self.checkbox_2.grid(row=2, column=0, pady=(20, 0), padx=20, sticky="n")
-        self.checkbox_3 = customtkinter.CTkCheckBox(master=self.checkbox_slider_frame)
-        self.checkbox_3.grid(row=3, column=0, pady=20, padx=20, sticky="n")
-
-        # set default values
-        self.sidebar_button_3.configure(state="disabled", text="Disabled CTkButton")
-        self.checkbox_3.configure(state="disabled")
-        self.checkbox_1.select()
-        self.scrollable_frame_switches[0].select()
-        self.scrollable_frame_switches[4].select()
-        self.radio_button_3.configure(state="disabled")
+        self.appearance_mode_label.grid(row=2, column=0, padx=20, pady=(10, 0))
+        self.appearance_mode_optionemenu = customtkinter.CTkOptionMenu(self.sidebar_frame, values=["Light", "Dark", "System"], command=self.change_appearance_mode_event)
+        self.appearance_mode_optionemenu.grid(row=3, column=0, padx=20, pady=(10, 10))
         self.appearance_mode_optionemenu.set("Dark")
-        self.scaling_optionemenu.set("100%")
-        self.optionmenu_1.set("CTkOptionmenu")
-        self.combobox_1.set("CTkComboBox")
-        self.slider_1.configure(command=self.progressbar_2.set)
-        self.slider_2.configure(command=self.progressbar_3.set)
-        self.progressbar_1.configure(mode="indeterminnate")
-        self.progressbar_1.start()
-        self.textbox.insert("0.0", "CTkTextbox\n\n" + "Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua.\n\n" * 20)
-        self.seg_button_1.configure(values=["CTkSegmentedButton", "Value 2", "Value 3"])
-        self.seg_button_1.set("Value 2")
 
-    def open_input_dialog_event(self):
-        dialog = customtkinter.CTkInputDialog(text="Type in a number:", title="CTkInputDialog")
-        print("CTkInputDialog:", dialog.get_input())
+        # Create dropdown select for cards
+        self.card_select_frame = customtkinter.CTkFrame(self.main_frame, fg_color="transparent")
+        self.card_select_frame.grid(row=0, column=1, padx=20, pady=(20, 0), sticky="nsew")
+
+        self.card_select_label = customtkinter.CTkLabel(self.card_select_frame, text="Selecione o Card:", font=customtkinter.CTkFont(size=16))
+        self.card_select_label.grid(row=0, column=0, padx=20, pady=(0, 5), sticky="w")
+
+        self.card_select_frame.grid_columnconfigure(1, weight=1)
+
+        self.selected_card = tkinter.StringVar()
+        self.card_select = customtkinter.CTkOptionMenu(self.card_select_frame, variable=self.selected_card, values=[card.name for card in self.cards])
+        self.card_select.grid(row=0, column=1, padx=20, pady=(0, 5), sticky="ew")
+        self.card_select.set(self.cards[0].name)
+
+        # Central frame for timer and buttons
+        self.timer_control_frame = customtkinter.CTkFrame(self.main_frame, fg_color="transparent")
+        self.timer_control_frame.grid(row=1, column=1, padx=20, pady=10, sticky="n")
+
+        # Timer label
+        self.timer_label = customtkinter.CTkLabel(self.timer_control_frame, text="00:00:00", font=customtkinter.CTkFont(size=40, weight="bold"))
+        self.timer_label.grid(row=0, column=0, columnspan=3, padx=20, pady=(50, 20), sticky="ew")
+
+        # Control buttons (Start, Pause, Stop)
+        self.start_button = customtkinter.CTkButton(self.timer_control_frame, text="Start", command=self.start_timer)
+        self.start_button.grid(row=1, column=0, padx=10, pady=10, sticky="w")
+
+        self.pause_button = customtkinter.CTkButton(self.timer_control_frame, text="Pause", command=self.pause_timer)
+        self.pause_button.grid(row=1, column=1, padx=10, pady=10, sticky="n")
+
+        self.stop_button = customtkinter.CTkButton(self.timer_control_frame, text="Stop", command=self.stop_timer)
+        self.stop_button.grid(row=1, column=2, padx=10, pady=10, sticky="e")
+
+    def show_settings_screen(self):
+        """Show the settings screen and hide the main screen."""
+
+        if os.path.isfile(CONFIG_FILE):
+            os.remove(CONFIG_FILE)
+
+        self.main_frame.grid_forget()  # Hide the main screen
+        self.settings_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")  # Show the settings screen
+
+    def show_main_screen(self):
+        """Show the main screen after successful credential validation."""
+        self.settings_frame.grid_forget()  # Hide the settings screen
+        self.main_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")  # Show the main screen
+        self.update_cards()
+        
+    def update_cards(self):
+        if self.jira_server is not None and self.email is not None and self.token is not None:
+            self.jira_integration = JiraIntegration(self.jira_server, self.email, self.token)
+            self.cards = self.jira_integration.get_cards()
+            self.card_select.configure(values=[card.name for card in self.cards])
+        else:
+            self.cards = [Card("", "", "", 0, 0)]
+
+    def save_credentials(self):
+        """Save credentials to a local file and validate them."""
+        jira_server = self.jira_server_entry.get()
+        email = self.email_entry.get()
+        token = self.token_entry.get()
+
+        if jira_server and email and token:
+            # Save the credentials in a JSON file
+            credentials = {
+                "jira_server": jira_server,
+                "email": email,
+                "token": token
+            }
+            with open(CONFIG_FILE, "w") as config_file:
+                json.dump(credentials, config_file)
+
+            # Validate credentials (dummy validation here)
+            if self.validate_jira_credentials(jira_server, email, token):
+                tkinter.messagebox.showinfo("Success", "Credenciais válidas!")
+                self.show_main_screen()
+            else:
+                tkinter.messagebox.showerror("Error", "Credenciais inválidas. Tente novamente.")
+        else:
+            tkinter.messagebox.showerror("Error", "Todos os campos são obrigatórios.")
+
+    def load_credentials(self):
+        """Load credentials from a local file if it exists."""
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, "r") as config_file:
+                credentials = json.load(config_file)
+                self.jira_server = credentials.get("jira_server")
+                self.email = credentials.get("email")
+                self.token = credentials.get("token")
+            return True
+        return False
+
+    def validate_jira_credentials(self, server, email, token):
+        """Dummy function to simulate Jira credential validation."""
+        # Replace this with real Jira API authentication logic
+        return True  # Always returns true for this example
+
+    def start_timer(self):
+        if self.paused:  # If paused, resume the timer and change the button text to "Continue"
+            self.paused = False
+            self.running = True
+            self.start_button.configure(text="Start")
+            self.start_time = time.time() - self.elapsed_time
+            self.update_timer()
+        else:
+            if not self.running:  # If not running, start the timer
+                self.running = True
+                self.start_time = time.time() - self.elapsed_time
+                self.update_timer()
+
+    def pause_timer(self):
+        if self.running:
+            self.running = False
+            self.paused = True
+            self.start_button.configure(text="Continue")  # Change the start button text to "Continue"
+            self.elapsed_time = time.time() - self.start_time
+
+    def stop_timer(self):
+        self.running = False
+        self.paused = False
+        self.elapsed_time = 0
+        self.timer_label.configure(text="00:00:00")
+        self.start_button.configure(text="Start")  # Reset the start button text
+
+    def update_timer(self):
+        if self.running:
+            self.elapsed_time = time.time() - self.start_time
+            minutes, seconds = divmod(int(self.elapsed_time), 60)
+            hours, minutes = divmod(minutes, 60)
+            self.timer_label.configure(text=f"{hours:02}:{minutes:02}:{seconds:02}")
+            self.after(1000, self.update_timer)
 
     def change_appearance_mode_event(self, new_appearance_mode: str):
         customtkinter.set_appearance_mode(new_appearance_mode)
-
-    def change_scaling_event(self, new_scaling: str):
-        new_scaling_float = int(new_scaling.replace("%", "")) / 100
-        customtkinter.set_widget_scaling(new_scaling_float)
-
-    def sidebar_button_event(self):
-        print("sidebar_button click")
-
 
 if __name__ == "__main__":
     app = App()
