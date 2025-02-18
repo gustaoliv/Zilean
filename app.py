@@ -14,6 +14,7 @@ customtkinter.set_appearance_mode("System")
 customtkinter.set_default_color_theme("blue")
 
 class App(customtkinter.CTk):
+
     def __init__(self):
         super().__init__()
 
@@ -21,20 +22,21 @@ class App(customtkinter.CTk):
         self.geometry(f"{1100}x{580}")
 
         # Initialize variables for credentials
-        self.jira_server : str|None = None
-        self.email : str|None = None
-        self.token : str|None = None
+        self.jira_server: str | None = None
+        self.email: str | None = None
+        self.token: str | None = None
 
         # Timer variables
-        self.running:bool = False
-        self.paused:bool = False
-        self.elapsed_time = 0
-        self.start_time = 0
-        
+        self.running: bool = False
+        self.paused: bool = False
+        self.elapsed_time: float = 0
+        self.start_time: float = 0
+
         # Initiliaze integration
-        self.jira_integration: IBoardIntegration|None = None
+        self.jira_integration: IBoardIntegration | None = None
         self.cards: list[Card] = []
-        self.update_cards()
+        self.selected_card_obj: Card | None = None  # Store the selected card object here
+        self.load_cards()
 
         # Add initial grid config
         self.grid_columnconfigure(1, weight=1)
@@ -95,62 +97,89 @@ class App(customtkinter.CTk):
         self.main_frame.grid_rowconfigure(1, weight=1)
         self.main_frame.grid_rowconfigure(2, weight=1)
 
-        # create sidebar frame
-        self.sidebar_frame = customtkinter.CTkFrame(self, width=140, corner_radius=0)
+        # Create sidebar frame
+        self.sidebar_frame: customtkinter.CTkFrame = customtkinter.CTkFrame(self, width=140, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, rowspan=4, sticky="nsew")
         self.sidebar_frame.grid_rowconfigure(4, weight=1)
-        self.logo_label = customtkinter.CTkLabel(self.sidebar_frame, text="Jira Time Tracker", font=customtkinter.CTkFont(size=20, weight="bold"))
+        self.logo_label: customtkinter.CTkLabel = customtkinter.CTkLabel(self.sidebar_frame, text="Jira Time Tracker", font=customtkinter.CTkFont(size=20, weight="bold"))
         self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
 
         # configurações button
-        self.sidebar_button_1 = customtkinter.CTkButton(self.sidebar_frame, text="Configurações", command=self.show_settings_screen)
+        self.sidebar_button_1: customtkinter.CTkButton = customtkinter.CTkButton(self.sidebar_frame, text="Configurações", command=self.show_settings_screen)
         self.sidebar_button_1.grid(row=1, column=0, padx=20, pady=10)
 
         # appearance mode option
-        self.appearance_mode_label = customtkinter.CTkLabel(self.sidebar_frame, text="Appearance Mode:", anchor="w")
+        self.appearance_mode_label: customtkinter.CTkLabel = customtkinter.CTkLabel(self.sidebar_frame, text="Appearance Mode:", anchor="w")
         self.appearance_mode_label.grid(row=2, column=0, padx=20, pady=(10, 0))
-        self.appearance_mode_optionemenu = customtkinter.CTkOptionMenu(self.sidebar_frame, values=["Light", "Dark", "System"], command=self.change_appearance_mode_event)
+        self.appearance_mode_optionemenu: customtkinter.CTkOptionMenu = customtkinter.CTkOptionMenu(self.sidebar_frame, values=["Light", "Dark", "System"], command=self.change_appearance_mode_event)
         self.appearance_mode_optionemenu.grid(row=3, column=0, padx=20, pady=(10, 10))
         self.appearance_mode_optionemenu.set("Dark")
 
         # Create dropdown select for cards
-        self.card_select_frame = customtkinter.CTkFrame(self.main_frame, fg_color="transparent")
+        self.card_select_frame: customtkinter.CTkFrame = customtkinter.CTkFrame(self.main_frame, fg_color="transparent")
         self.card_select_frame.grid(row=0, column=1, padx=20, pady=(20, 0), sticky="nsew")
 
-        self.card_select_label = customtkinter.CTkLabel(self.card_select_frame, text="Selecione o Card:", font=customtkinter.CTkFont(size=16))
+        self.card_select_label: customtkinter.CTkLabel = customtkinter.CTkLabel(self.card_select_frame, text="Selecione o Card:", font=customtkinter.CTkFont(size=16))
         self.card_select_label.grid(row=0, column=0, padx=20, pady=(0, 5), sticky="w")
 
         self.card_select_frame.grid_columnconfigure(1, weight=1)
 
-        self.selected_card = tkinter.StringVar()
-        self.card_select = customtkinter.CTkOptionMenu(self.card_select_frame, variable=self.selected_card, values=[card.name for card in self.cards])
+        self.selected_card: tkinter.StringVar = tkinter.StringVar()
+        self.selected_card.trace_add("write", self.on_card_selected)  # Track changes to selected card
+        self.card_select: customtkinter.CTkOptionMenu = customtkinter.CTkOptionMenu(self.card_select_frame, 
+                                                                                    variable=self.selected_card, 
+                                                                                    values=[card.name for card in self.cards], 
+                                                                                    )
         self.card_select.grid(row=0, column=1, padx=20, pady=(0, 5), sticky="ew")
         self.card_select.set(self.cards[0].name)
 
         # Central frame for timer and buttons
-        self.timer_control_frame = customtkinter.CTkFrame(self.main_frame, fg_color="transparent")
+        self.timer_control_frame: customtkinter.CTkFrame = customtkinter.CTkFrame(self.main_frame, fg_color="transparent")
         self.timer_control_frame.grid(row=1, column=1, padx=20, pady=10, sticky="n")
 
         # Timer label
-        self.timer_label = customtkinter.CTkLabel(self.timer_control_frame, text="00:00:00", font=customtkinter.CTkFont(size=40, weight="bold"))
+        self.timer_label: customtkinter.CTkLabel = customtkinter.CTkLabel(self.timer_control_frame, text="00:00:00", font=customtkinter.CTkFont(size=80, weight="bold"))
         self.timer_label.grid(row=0, column=0, columnspan=3, padx=20, pady=(50, 20), sticky="ew")
 
         # Control buttons (Start, Pause, Stop)
-        self.start_button = customtkinter.CTkButton(self.timer_control_frame, text="Start", command=self.start_timer)
+        self.start_button: customtkinter.CTkButton = customtkinter.CTkButton(self.timer_control_frame, text="Start", command=self.start_timer)
         self.start_button.grid(row=1, column=0, padx=10, pady=10, sticky="w")
 
-        self.pause_button = customtkinter.CTkButton(self.timer_control_frame, text="Pause", command=self.pause_timer)
+        self.pause_button: customtkinter.CTkButton = customtkinter.CTkButton(self.timer_control_frame, text="Pause", command=self.pause_timer)
         self.pause_button.grid(row=1, column=1, padx=10, pady=10, sticky="n")
 
-        self.stop_button = customtkinter.CTkButton(self.timer_control_frame, text="Stop", command=self.stop_timer)
+        self.stop_button: customtkinter.CTkButton = customtkinter.CTkButton(self.timer_control_frame, text="Stop", command=self.stop_timer)
         self.stop_button.grid(row=1, column=2, padx=10, pady=10, sticky="e")
+
+    def on_card_selected(self, *args):
+        """Callback function when a card is selected."""
+        selected_name = self.selected_card.get()  # Get selected card name
+
+        # Se o timer estiver rodando, pare-o antes de mudar de card
+        if self.elapsed_time > 0:
+            self.stop_timer()
+
+        self.selected_card_obj = next((card for card in self.cards if card.name == selected_name), None)
+        if self.selected_card_obj:
+            if hasattr(self, 'start_button') and self.start_button is not None:
+                if self.selected_card_obj.time_spent > 0:
+                    self.elapsed_time = self.selected_card_obj.time_spent
+                    minutes, seconds = divmod(int(self.elapsed_time), 60)
+                    hours, minutes = divmod(minutes, 60)
+                    self.timer_label.configure(text=f"{hours:02}:{minutes:02}:{seconds:02}")
+                    self.start_button.configure(text="Continue")
+                else:
+                    self.elapsed_time = 0
+                    if hasattr(self, 'timer_label') and self.timer_label is not None:
+                        self.timer_label.configure(text="00:00:00")
+                    self.start_button.configure(text="Start")
+
+                self.start_button.configure(state="normal")
 
     def show_settings_screen(self):
         """Show the settings screen and hide the main screen."""
-
         if os.path.isfile(CONFIG_FILE):
             os.remove(CONFIG_FILE)
-
         self.main_frame.grid_forget()  # Hide the main screen
         self.settings_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")  # Show the settings screen
 
@@ -158,9 +187,9 @@ class App(customtkinter.CTk):
         """Show the main screen after successful credential validation."""
         self.settings_frame.grid_forget()  # Hide the settings screen
         self.main_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")  # Show the main screen
-        self.update_cards()
-        
-    def update_cards(self):
+        self.load_cards()
+
+    def load_cards(self, *args):
         if self.jira_server is not None and self.email is not None and self.token is not None:
             self.jira_integration = JiraIntegration(self.jira_server, self.email, self.token)
             self.cards = self.jira_integration.get_cards()
@@ -175,16 +204,10 @@ class App(customtkinter.CTk):
         token = self.token_entry.get()
 
         if jira_server and email and token:
-            # Save the credentials in a JSON file
-            credentials = {
-                "jira_server": jira_server,
-                "email": email,
-                "token": token
-            }
+            credentials = {"jira_server": jira_server, "email": email, "token": token}
             with open(CONFIG_FILE, "w") as config_file:
                 json.dump(credentials, config_file)
 
-            # Validate credentials (dummy validation here)
             if self.validate_jira_credentials(jira_server, email, token):
                 tkinter.messagebox.showinfo("Success", "Credenciais válidas!")
                 self.show_main_screen()
@@ -206,35 +229,74 @@ class App(customtkinter.CTk):
 
     def validate_jira_credentials(self, server, email, token):
         """Dummy function to simulate Jira credential validation."""
-        # Replace this with real Jira API authentication logic
         return True  # Always returns true for this example
 
     def start_timer(self):
-        if self.paused:  # If paused, resume the timer and change the button text to "Continue"
+        if self.selected_card_obj is None or not self.selected_card_obj.id:
+            tkinter.messagebox.showerror("Error", "Selecione um card antes de iniciar o timer.")
+            return
+
+        if self.paused:
+            self.stop_button.configure(state="normal")
             self.paused = False
             self.running = True
             self.start_button.configure(text="Start")
+            self.start_button.configure(state="disabled")
             self.start_time = time.time() - self.elapsed_time
             self.update_timer()
         else:
-            if not self.running:  # If not running, start the timer
+            if not self.running:
                 self.running = True
-                self.start_time = time.time() - self.elapsed_time
+                self.elapsed_time = 0
+                self.start_time = time.time() - self.selected_card_obj.time_spent
                 self.update_timer()
+                self.start_button.configure(state="disabled")
+                self.stop_button.configure(state="normal")
 
     def pause_timer(self):
         if self.running:
             self.running = False
-            self.paused = True
-            self.start_button.configure(text="Continue")  # Change the start button text to "Continue"
+            self.paused  = True
+            self.start_button.configure(text="Continue")
+            self.start_button.configure(state="normal")
             self.elapsed_time = time.time() - self.start_time
 
     def stop_timer(self):
-        self.running = False
-        self.paused = False
-        self.elapsed_time = 0
-        self.timer_label.configure(text="00:00:00")
-        self.start_button.configure(text="Start")  # Reset the start button text
+        if self.running or self.paused:
+            self.stop_button.configure(state="disabled")
+
+            self.running = False
+            self.paused  = False
+            print(f"Finished working on card: {self.selected_card_obj.name if self.selected_card_obj else 'None'}")
+
+            if self.selected_card_obj is not None:
+                self.elapsed_time -= self.selected_card_obj.time_spent
+
+            print(f"Register elapsed time: {self.elapsed_time}")
+
+            if self.elapsed_time < 60:
+                if self.selected_card_obj is not None:
+                    self.elapsed_time += self.selected_card_obj.time_spent
+                self.paused  = True
+                self.start_button.configure(state="normal") 
+                self.start_button.configure(text="Continue")
+                tkinter.messagebox.showwarning("Warning", "Its possible to register only time >= 60 seconds")
+                return
+
+            if self.selected_card_obj is not None:
+                self.selected_card_obj.time_spent += int(self.elapsed_time)
+                print(f"Total time spent on card: {self.selected_card_obj.time_spent}")
+            
+            # Save the time spent to the selected card
+            if self.jira_integration is not None and self.selected_card_obj is not None:
+                temp = self.selected_card_obj.time_spent
+                self.selected_card_obj.time_spent = int(self.elapsed_time) 
+                self.jira_integration.update_card(self.selected_card_obj)
+                self.selected_card_obj.time_spent = temp
+
+            # Reset timer and clear selection
+            self.elapsed_time = 0
+            self.start_button.configure(text="Start")
 
     def update_timer(self):
         if self.running:
