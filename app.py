@@ -185,9 +185,9 @@ class App(customtkinter.CTk):
 
     def show_main_screen(self):
         """Show the main screen after successful credential validation."""
+        self.load_cards()
         self.settings_frame.grid_forget()  # Hide the settings screen
         self.main_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")  # Show the main screen
-        self.load_cards()
 
     def load_cards(self, *args):
         if self.jira_server is not None and self.email is not None and self.token is not None:
@@ -199,16 +199,16 @@ class App(customtkinter.CTk):
 
     def save_credentials(self):
         """Save credentials to a local file and validate them."""
-        jira_server = self.jira_server_entry.get()
-        email = self.email_entry.get()
-        token = self.token_entry.get()
+        self.jira_server = self.jira_server_entry.get()
+        self.email = self.email_entry.get()
+        self.token = self.token_entry.get()
 
-        if jira_server and email and token:
-            credentials = {"jira_server": jira_server, "email": email, "token": token}
+        if self.jira_server and self.email and self.token:
+            credentials = {"jira_server": self.jira_server, "email": self.email, "token": self.token}
             with open(CONFIG_FILE, "w") as config_file:
                 json.dump(credentials, config_file)
 
-            if self.validate_jira_credentials(jira_server, email, token):
+            if self.validate_jira_credentials(self.jira_server, self.email, self.token):
                 tkinter.messagebox.showinfo("Success", "Credenciais válidas!")
                 self.show_main_screen()
             else:
