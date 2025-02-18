@@ -1,5 +1,7 @@
 <div align="center" id="top"> 
-  <img src="./.github/app.gif" alt="Zilean" />
+  <div align="center" id="top"> 
+    <img src="Images/zilean_wallpapper.jpg" alt="print"/>
+  </div>
 
   &#xa0;
 
