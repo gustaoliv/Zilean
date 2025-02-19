@@ -7,8 +7,17 @@ import time
 from Domain.Models.Card import Card
 from Domain.Interfaces.IBoardIntegration import IBoardIntegration
 from Infraestructure.JiraIntegration import JiraIntegration
+import fontawesome as fa
 
 CONFIG_FILE = "config.json"
+
+# ICONS
+START_ICON = f"{fa.icons['play']} Start"
+PAUSE_BUTTON = text=f"{fa.icons['pause']} Pause"
+STOP_BUTTON = f"{fa.icons['stop']} Stop"
+CONTINUE_BUTTON = f"{fa.icons['play']} Continue"
+TOGGLE_SHOW = fa.icons['chevron-right']
+TOGGLE_HIDE = fa.icons['chevron-left']
 
 customtkinter.set_appearance_mode("System")
 customtkinter.set_default_color_theme("blue")
@@ -19,7 +28,7 @@ class App(customtkinter.CTk):
         super().__init__()
 
         self.title("Jira Time Tracker")
-        self.geometry(f"{1100}x{580}")
+        self.geometry(f"{800}x{400}")
 
         # Initialize variables for credentials
         self.jira_server: str | None = None
@@ -142,19 +151,19 @@ class App(customtkinter.CTk):
         self.timer_label.grid(row=0, column=0, columnspan=3, padx=20, pady=(50, 20), sticky="ew")
 
         # Control buttons (Start, Pause, Stop)
-        self.start_button: customtkinter.CTkButton = customtkinter.CTkButton(self.timer_control_frame, text="Start", command=self.start_timer)
+        self.start_button: customtkinter.CTkButton = customtkinter.CTkButton(self.timer_control_frame, text=START_ICON, command=self.start_timer)
         self.start_button.grid(row=1, column=0, padx=10, pady=10, sticky="w")
 
-        self.pause_button: customtkinter.CTkButton = customtkinter.CTkButton(self.timer_control_frame, text="Pause", command=self.pause_timer)
+        self.pause_button: customtkinter.CTkButton = customtkinter.CTkButton(self.timer_control_frame, text=PAUSE_BUTTON, command=self.pause_timer)
         self.pause_button.grid(row=1, column=1, padx=10, pady=10, sticky="n")
 
-        self.stop_button: customtkinter.CTkButton = customtkinter.CTkButton(self.timer_control_frame, text="Stop", command=self.stop_timer)
+        self.stop_button: customtkinter.CTkButton = customtkinter.CTkButton(self.timer_control_frame, text=STOP_BUTTON, command=self.stop_timer)
         self.stop_button.grid(row=1, column=2, padx=10, pady=10, sticky="e")
 
         # Add a button to toggle the sidebar visibility
         self.toggle_sidebar_button = customtkinter.CTkButton(
             self, 
-            text=">", 
+            text=TOGGLE_HIDE, 
             width=30,  # Slightly wider to avoid being too thin
             height=30,  # Set a fixed height
             font=customtkinter.CTkFont(size=14),  # Adjust font size
@@ -172,10 +181,10 @@ class App(customtkinter.CTk):
         """Toggle the visibility of the sidebar."""
         if self.sidebar_frame.winfo_ismapped():
             self.sidebar_frame.grid_forget()
-            self.toggle_sidebar_button.configure(text="<")
+            self.toggle_sidebar_button.configure(text=TOGGLE_SHOW,)
         else:
             self.sidebar_frame.grid(row=0, column=0, rowspan=4, sticky="nsew")
-            self.toggle_sidebar_button.configure(text=">")
+            self.toggle_sidebar_button.configure(text=TOGGLE_HIDE)
 
     def on_card_selected(self, *args):
         """Callback function when a card is selected."""
@@ -193,12 +202,12 @@ class App(customtkinter.CTk):
                     minutes, seconds = divmod(int(self.elapsed_time), 60)
                     hours, minutes = divmod(minutes, 60)
                     self.timer_label.configure(text=f"{hours:02}:{minutes:02}:{seconds:02}")
-                    self.start_button.configure(text="Continue")
+                    self.start_button.configure(text=CONTINUE_BUTTON)
                 else:
                     self.elapsed_time = 0
                     if hasattr(self, 'timer_label') and self.timer_label is not None:
                         self.timer_label.configure(text="00:00:00")
-                    self.start_button.configure(text="Start")
+                    self.start_button.configure(text=START_ICON)
 
                 self.start_button.configure(state="normal")
 
@@ -266,7 +275,7 @@ class App(customtkinter.CTk):
             self.stop_button.configure(state="normal")
             self.paused = False
             self.running = True
-            self.start_button.configure(text="Start")
+            self.start_button.configure(text=START_ICON)
             self.start_button.configure(state="disabled")
             self.start_time = time.time() - self.elapsed_time
             self.update_timer()
@@ -283,7 +292,7 @@ class App(customtkinter.CTk):
         if self.running:
             self.running = False
             self.paused  = True
-            self.start_button.configure(text="Continue")
+            self.start_button.configure(text=CONTINUE_BUTTON)
             self.start_button.configure(state="normal")
             self.elapsed_time = time.time() - self.start_time
 
@@ -305,7 +314,7 @@ class App(customtkinter.CTk):
                     self.elapsed_time += self.selected_card_obj.time_spent
                 self.paused  = True
                 self.start_button.configure(state="normal") 
-                self.start_button.configure(text="Continue")
+                self.start_button.configure(text=CONTINUE_BUTTON)
                 tkinter.messagebox.showwarning("Warning", "Its possible to register only time >= 60 seconds")
                 return
 
@@ -322,7 +331,7 @@ class App(customtkinter.CTk):
 
             # Reset timer and clear selection
             self.elapsed_time = 0
-            self.start_button.configure(text="Start")
+            self.start_button.configure(text=START_ICON)
 
     def update_timer(self):
         if self.running:
