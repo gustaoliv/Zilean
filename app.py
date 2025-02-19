@@ -71,7 +71,7 @@ class App(customtkinter.CTk):
         self.settings_frame = customtkinter.CTkFrame(self, fg_color="transparent")
         self.settings_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
 
-        self.settings_label = customtkinter.CTkLabel(self.settings_frame, text="Configurações Jira", font=customtkinter.CTkFont(size=20, weight="bold"))
+        self.settings_label = customtkinter.CTkLabel(self.settings_frame, text="Jira Configuration", font=customtkinter.CTkFont(size=20, weight="bold"))
         self.settings_label.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="ew")
 
         # Jira server entry
@@ -93,7 +93,7 @@ class App(customtkinter.CTk):
         self.token_entry.grid(row=6, column=0, padx=20, pady=(0, 10), sticky="ew")
 
         # Save button
-        self.save_button = customtkinter.CTkButton(self.settings_frame, text="Salvar", command=self.save_credentials)
+        self.save_button = customtkinter.CTkButton(self.settings_frame, text="Save", command=self.save_credentials)
         self.save_button.grid(row=7, column=0, padx=20, pady=(20, 10), sticky="ew")
 
     def create_main_screen(self):
@@ -114,7 +114,7 @@ class App(customtkinter.CTk):
         self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
 
         # configurações button
-        self.sidebar_button_1: customtkinter.CTkButton = customtkinter.CTkButton(self.sidebar_frame, text="Configurações", command=self.show_settings_screen)
+        self.sidebar_button_1: customtkinter.CTkButton = customtkinter.CTkButton(self.sidebar_frame, text="Configurations", command=self.show_settings_screen)
         self.sidebar_button_1.grid(row=1, column=0, padx=20, pady=10)
 
         # appearance mode option
@@ -128,7 +128,7 @@ class App(customtkinter.CTk):
         self.card_select_frame: customtkinter.CTkFrame = customtkinter.CTkFrame(self.main_frame, fg_color="transparent")
         self.card_select_frame.grid(row=0, column=1, padx=20, pady=(20, 0), sticky="nsew")
 
-        self.card_select_label: customtkinter.CTkLabel = customtkinter.CTkLabel(self.card_select_frame, text="Selecione o Card:", font=customtkinter.CTkFont(size=16))
+        self.card_select_label: customtkinter.CTkLabel = customtkinter.CTkLabel(self.card_select_frame, text="Select the Card:", font=customtkinter.CTkFont(size=16))
         self.card_select_label.grid(row=0, column=0, padx=20, pady=(0, 5), sticky="w")
 
         self.card_select_frame.grid_columnconfigure(1, weight=1)
@@ -244,12 +244,12 @@ class App(customtkinter.CTk):
                 json.dump(credentials, config_file)
 
             if self.validate_jira_credentials(self.jira_server, self.email, self.token):
-                tkinter.messagebox.showinfo("Success", "Credenciais válidas!")
+                tkinter.messagebox.showinfo("Success", "Your credentials were successfully validated!")
                 self.show_main_screen()
             else:
-                tkinter.messagebox.showerror("Error", "Credenciais inválidas. Tente novamente.")
+                tkinter.messagebox.showerror("Error", "Invalid credentials. Try again.")
         else:
-            tkinter.messagebox.showerror("Error", "Todos os campos são obrigatórios.")
+            tkinter.messagebox.showerror("Error", "Every configuration fields are required.")
 
     def load_credentials(self):
         """Load credentials from a local file if it exists."""
@@ -268,7 +268,7 @@ class App(customtkinter.CTk):
 
     def start_timer(self):
         if self.selected_card_obj is None or not self.selected_card_obj.id:
-            tkinter.messagebox.showerror("Error", "Selecione um card antes de iniciar o timer.")
+            tkinter.messagebox.showerror("Error", "Select a card before press start.")
             return
 
         if self.paused:
@@ -315,7 +315,7 @@ class App(customtkinter.CTk):
                 self.paused  = True
                 self.start_button.configure(state="normal") 
                 self.start_button.configure(text=CONTINUE_BUTTON)
-                tkinter.messagebox.showwarning("Warning", "Its possible to register only time >= 60 seconds")
+                tkinter.messagebox.showwarning("Warning", "It's only possible to register times greater than 60 seconds")
                 return
 
             if self.selected_card_obj is not None:
@@ -328,6 +328,7 @@ class App(customtkinter.CTk):
                 self.selected_card_obj.time_spent = int(self.elapsed_time) 
                 self.jira_integration.update_card(self.selected_card_obj)
                 self.selected_card_obj.time_spent = temp
+                tkinter.messagebox.showinfo("Info", f"Registered time: {int(self.elapsed_time)} seconds")
 
             # Reset timer and clear selection
             self.elapsed_time = 0
