@@ -32,7 +32,7 @@ class App(customtkinter.CTk):
         self.elapsed_time: float = 0
         self.start_time: float = 0
 
-        # Initiliaze integration
+        # Initialize integration
         self.jira_integration: IBoardIntegration | None = None
         self.cards: list[Card] = []
         self.selected_card_obj: Card | None = None  # Store the selected card object here
@@ -150,6 +150,32 @@ class App(customtkinter.CTk):
 
         self.stop_button: customtkinter.CTkButton = customtkinter.CTkButton(self.timer_control_frame, text="Stop", command=self.stop_timer)
         self.stop_button.grid(row=1, column=2, padx=10, pady=10, sticky="e")
+
+        # Add a button to toggle the sidebar visibility
+        self.toggle_sidebar_button = customtkinter.CTkButton(
+            self, 
+            text=">", 
+            width=30,  # Slightly wider to avoid being too thin
+            height=30,  # Set a fixed height
+            font=customtkinter.CTkFont(size=14),  # Adjust font size
+            command=self.toggle_sidebar
+        )
+        self.toggle_sidebar_button.grid(row=3, column=0, sticky="sw", padx=(5, 0), pady=(0, 5))  # Move to bottom row
+
+        # Allow the row to expand, pushing the button to the bottom
+        self.grid_rowconfigure(3, weight=1)  # Adjust the row index if needed
+        # Prevent the grid from resizing the button
+        self.grid_rowconfigure(0, weight=0)  # Prevent row 0 from expanding
+        self.grid_columnconfigure(0, weight=0)  # Prevent column 0 from expanding
+
+    def toggle_sidebar(self):
+        """Toggle the visibility of the sidebar."""
+        if self.sidebar_frame.winfo_ismapped():
+            self.sidebar_frame.grid_forget()
+            self.toggle_sidebar_button.configure(text="<")
+        else:
+            self.sidebar_frame.grid(row=0, column=0, rowspan=4, sticky="nsew")
+            self.toggle_sidebar_button.configure(text=">")
 
     def on_card_selected(self, *args):
         """Callback function when a card is selected."""
