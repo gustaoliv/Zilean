@@ -18,6 +18,8 @@ STOP_BUTTON = f"{fa.icons['stop']} Stop"
 CONTINUE_BUTTON = f"{fa.icons['play']} Continue"
 TOGGLE_SHOW = fa.icons['chevron-right']
 TOGGLE_HIDE = fa.icons['chevron-left']
+INFO_ICON = fa.icons['info-circle']
+
 
 customtkinter.set_appearance_mode("System")
 customtkinter.set_default_color_theme("blue")
@@ -74,6 +76,17 @@ class App(customtkinter.CTk):
         self.settings_label = customtkinter.CTkLabel(self.settings_frame, text="Jira Configuration", font=customtkinter.CTkFont(size=20, weight="bold"))
         self.settings_label.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="ew")
 
+        self.turotial_icon = customtkinter.CTkButton(
+            self.settings_frame, 
+            text=INFO_ICON, 
+            width=30,  # Slightly wider to avoid being too thin
+            height=30,  # Set a fixed height
+            font=customtkinter.CTkFont(size=14),  # Adjust font size
+            command=self.show_setup_tutorial
+        )
+
+        self.turotial_icon.grid(row=0, column=1, padx=(0, 5), pady=(0, 5))  # Move to bottom row
+
         # Jira server entry
         self.jira_server_label = customtkinter.CTkLabel(self.settings_frame, text="Jira Server:")
         self.jira_server_label.grid(row=1, column=0, padx=20, pady=(10, 5), sticky="w")
@@ -95,6 +108,15 @@ class App(customtkinter.CTk):
         # Save button
         self.save_button = customtkinter.CTkButton(self.settings_frame, text="Save", command=self.save_credentials)
         self.save_button.grid(row=7, column=0, padx=20, pady=(20, 10), sticky="ew")
+
+    def show_setup_tutorial(self):
+        tkinter.messagebox.showinfo(
+            "Setup Tutorial", 
+            """
+                1. Access the url: https://id.atlassian.com/manage-profile/security/api-tokens
+                2. Create a token
+            """
+        )
 
     def create_main_screen(self):
         """Create the main screen with the timer and card selection."""
