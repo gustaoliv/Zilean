@@ -22,13 +22,13 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run PyInstaller
-        run: python -m PyInstaller app.spec
+        run: python -m PyInstaller Zilean.spec
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app
-          path: dist/app.exe
+          name: Zilean
+          path: dist/Zilean.exe
 
       - name: Create GitHub Release
         id: create_release
@@ -38,6 +38,6 @@ jobs:
           name: Release v1.0.${{ github.run_number }}
           body: |
             Automated release from GitHub Actions.
-          files: dist/app.exe
+          files: dist/Zilean.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
