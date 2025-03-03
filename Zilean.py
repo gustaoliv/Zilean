@@ -19,7 +19,7 @@ CONTINUE_BUTTON = f"{fa.icons['play']} Continue"
 TOGGLE_SHOW = fa.icons['chevron-right']
 TOGGLE_HIDE = fa.icons['chevron-left']
 INFO_ICON = fa.icons['info-circle']
-
+REFRESH_ICON = fa.icons['history']
 
 customtkinter.set_appearance_mode("System")
 customtkinter.set_default_color_theme("blue")
@@ -164,6 +164,9 @@ class App(customtkinter.CTk):
         self.card_select.grid(row=0, column=1, padx=20, pady=(0, 5), sticky="ew")
         self.card_select.set(self.cards[0].name)
 
+        self.refresh_cards_button: customtkinter.CTkButton = customtkinter.CTkButton(self.card_select_frame, text=REFRESH_ICON, command=self.load_cards)
+        self.refresh_cards_button.grid(row=0, column=2, padx=0, sticky="w")
+
         # Central frame for timer and buttons
         self.timer_control_frame: customtkinter.CTkFrame = customtkinter.CTkFrame(self.main_frame, fg_color="transparent")
         self.timer_control_frame.grid(row=1, column=1, padx=20, pady=10, sticky="n")
@@ -248,11 +251,14 @@ class App(customtkinter.CTk):
 
     def load_cards(self, *args):
         if self.jira_server is not None and self.email is not None and self.token is not None:
+            self.card_select.configure(state="disabled")
             self.jira_integration = JiraIntegration(self.jira_server, self.email, self.token)
             self.cards = self.jira_integration.get_cards()
             self.card_select.configure(values=[card.name for card in self.cards])
+            self.card_select.configure(state="normal")
         else:
             self.cards = [Card("", "", "", 0, 0)]
+            
 
     def save_credentials(self):
         """Save credentials to a local file and validate them."""
