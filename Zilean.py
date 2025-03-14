@@ -174,17 +174,20 @@ class App(customtkinter.CTk):
 
         # Timer label
         self.timer_label: customtkinter.CTkLabel = customtkinter.CTkLabel(self.timer_control_frame, text="00:00:00", font=customtkinter.CTkFont(size=80, weight="bold"))
-        self.timer_label.grid(row=0, column=0, columnspan=3, padx=20, pady=(50, 20), sticky="ew")
+        self.timer_label.grid(row=0, column=0, columnspan=3, padx=20, pady=(50, 5), sticky="ew")
+
+        self.estimated_duration_label: customtkinter.CTkLabel = customtkinter.CTkLabel(self.timer_control_frame, text="Estimated Time: 00:00:00", font=customtkinter.CTkFont(size=15), text_color="#3B8ED0")
+        self.estimated_duration_label.grid(row=1, column=0, columnspan=3, padx=20, pady=(0, 5), sticky="ew")
 
         # Control buttons (Start, Pause, Stop)
         self.start_button: customtkinter.CTkButton = customtkinter.CTkButton(self.timer_control_frame, text=START_ICON, command=self.start_timer)
-        self.start_button.grid(row=1, column=0, padx=10, pady=10, sticky="w")
+        self.start_button.grid(row=2, column=0, padx=10, pady=10, sticky="w")
 
         self.pause_button: customtkinter.CTkButton = customtkinter.CTkButton(self.timer_control_frame, text=PAUSE_BUTTON, command=self.pause_timer)
-        self.pause_button.grid(row=1, column=1, padx=10, pady=10, sticky="n")
+        self.pause_button.grid(row=2, column=1, padx=10, pady=10, sticky="n")
 
         self.stop_button: customtkinter.CTkButton = customtkinter.CTkButton(self.timer_control_frame, text=STOP_BUTTON, command=self.stop_timer)
-        self.stop_button.grid(row=1, column=2, padx=10, pady=10, sticky="e")
+        self.stop_button.grid(row=2, column=2, padx=10, pady=10, sticky="e")
 
         # Add a button to toggle the sidebar visibility
         self.toggle_sidebar_button = customtkinter.CTkButton(
@@ -221,13 +224,15 @@ class App(customtkinter.CTk):
             self.stop_timer()
 
         self.selected_card_obj = next((card for card in self.cards if card.name == selected_name), None)
+
+        if hasattr(self, 'estimated_duration_label') and self.selected_card_obj:
+            self.estimated_duration_label.configure(text=f"Estimated Time: {self.milesseconds_to_time(self.selected_card_obj.estimated_duration)}")
+
         if self.selected_card_obj:
             if hasattr(self, 'start_button') and self.start_button is not None:
                 if self.selected_card_obj.time_spent > 0:
                     self.elapsed_time = self.selected_card_obj.time_spent
-                    minutes, seconds = divmod(int(self.elapsed_time), 60)
-                    hours, minutes = divmod(minutes, 60)
-                    self.timer_label.configure(text=f"{hours:02}:{minutes:02}:{seconds:02}")
+                    self.timer_label.configure(text=self.milesseconds_to_time(self.elapsed_time))
                     self.start_button.configure(text=CONTINUE_BUTTON)
                 else:
                     self.elapsed_time = 0
@@ -238,6 +243,11 @@ class App(customtkinter.CTk):
                 self.start_button.configure(state="normal")
 
         self.set_change_card_selector()
+
+    def milesseconds_to_time(self, milliseconds: int) -> str:
+        minutes, seconds = divmod(milliseconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        return f"{hours:02}:{minutes:02}:{seconds:02}"
 
     def show_settings_screen(self):
         """Show the settings screen and hide the main screen."""
