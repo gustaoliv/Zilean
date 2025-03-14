@@ -28,7 +28,7 @@ class App(customtkinter.CTk):
 
     def __init__(self):
         super().__init__()
-
+        
         self.title("Jira Time Tracker")
         self.geometry(f"{800}x{400}")
 
@@ -130,8 +130,9 @@ class App(customtkinter.CTk):
 
         # Create sidebar frame
         self.sidebar_frame: customtkinter.CTkFrame = customtkinter.CTkFrame(self, width=140, corner_radius=0)
-        self.sidebar_frame.grid(row=0, column=0, rowspan=4, sticky="nsew")
-        self.sidebar_frame.grid_rowconfigure(4, weight=1)
+        self.sidebar_frame.grid(row=0, column=0, rowspan=10, sticky="nsew")
+        self.sidebar_frame.grid_rowconfigure(10, weight=1)
+
         self.logo_label: customtkinter.CTkLabel = customtkinter.CTkLabel(self.sidebar_frame, text="Jira Time Tracker", font=customtkinter.CTkFont(size=20, weight="bold"))
         self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
 
@@ -236,6 +237,8 @@ class App(customtkinter.CTk):
 
                 self.start_button.configure(state="normal")
 
+        self.set_change_card_selector()
+
     def show_settings_screen(self):
         """Show the settings screen and hide the main screen."""
         if os.path.isfile(CONFIG_FILE):
@@ -256,10 +259,19 @@ class App(customtkinter.CTk):
             self.cards = self.jira_integration.get_cards()
             self.card_select.configure(values=[card.name for card in self.cards])
             self.card_select.configure(state="normal")
-        else:
-            self.cards = [Card("", "", "", 0, 0)]
             
-
+            if self.selected_card_obj and self.selected_card_obj.id:
+                if self.selected_card_obj.id in [card.id for card in self.cards]:
+                    self.selected_card.set(self.selected_card_obj.name)
+                    self.selected_card_obj = next((card for card in self.cards if card.id == self.selected_card_obj.id), None)
+                    self.on_card_selected()
+                else:
+                    self.selected_card.set(self.cards[0].name)
+                    self.selected_card_obj = self.cards[0]
+                    self.on_card_selected()
+        else:
+            self.cards = [Card("", "", "", 0, 0, "", [])]
+            
     def save_credentials(self):
         """Save credentials to a local file and validate them."""
         self.jira_server = self.jira_server_entry.get()
@@ -354,7 +366,7 @@ class App(customtkinter.CTk):
             if self.jira_integration is not None and self.selected_card_obj is not None:
                 temp = self.selected_card_obj.time_spent
                 self.selected_card_obj.time_spent = int(self.elapsed_time) 
-                self.jira_integration.update_card(self.selected_card_obj)
+                self.jira_integration.add_timespent_to_card(self.selected_card_obj)
                 self.selected_card_obj.time_spent = temp
                 tkinter.messagebox.showinfo("Info", f"Registered time: {int(self.elapsed_time)} seconds")
 
@@ -372,6 +384,55 @@ class App(customtkinter.CTk):
 
     def change_appearance_mode_event(self, new_appearance_mode: str):
         customtkinter.set_appearance_mode(new_appearance_mode)
+
+    def set_change_card_selector(self):
+        if  self.selected_card_obj is not None and self.selected_card_obj.possible_next_stages is not None and len(self.selected_card_obj.possible_next_stages) > 0:
+            self.card_stage_selector_label: customtkinter.CTkLabel = customtkinter.CTkLabel(self.sidebar_frame, text="Card Stage manegement:", anchor="w")
+            self.card_stage_selector_label.grid(row=4, column=0, padx=20, pady=(20, 10))
+            
+            self.selected_card_obj_current_stage: tkinter.StringVar = tkinter.StringVar()
+            self.selected_card_obj_current_stage.trace_add("write", self.change_card_stage)
+            
+            self.card_stage_selector: customtkinter.CTkOptionMenu = customtkinter.CTkOptionMenu(self.sidebar_frame, 
+                                                                                                variable=self.selected_card_obj_current_stage, 
+                                                                                                values=[stage for stage in self.selected_card_obj.possible_next_stages], 
+                                                                                            )
+            self.card_stage_selector.grid(row=5, column=0, padx=20, pady=(0, 5), sticky="ew")
+            self.card_stage_selector.set(self.selected_card_obj.current_stage)
+
+    def change_card_stage(self, *args):
+        if self.selected_card_obj is None:
+            return
+        
+        if self.jira_integration is None:
+            return
+
+        current_stage = self.selected_card_obj.current_stage
+        new_stage     = self.selected_card_obj_current_stage.get()
+
+        if current_stage == new_stage:
+            return
+
+        print(f"Changing stage from {current_stage} to {new_stage}")
+        try:
+            if self.jira_integration.change_card_stage(self.selected_card_obj, new_stage):
+                self.refresh_card(self.selected_card_obj)
+                tkinter.messagebox.showinfo("Success", f"Successfully changed stage from {current_stage} to {new_stage}.")
+            else:
+                tkinter.messagebox.showerror("Error", f"Failed to change stage from {current_stage} to {new_stage}.")
+        except:
+            tkinter.messagebox.showerror("Error", f"Failed to change stage from {current_stage} to {new_stage}.")
+ 
+    def refresh_card(self, card:Card):
+        if self.jira_integration == None:
+            return card
+        
+        refreshed_card: Card = self.jira_integration.refresh_card(card)
+        self.selected_card_obj = refreshed_card
+        
+        self.card_stage_selector.configure(values=[stage for stage in refreshed_card.possible_next_stages])
+        self.card_stage_selector.set(refreshed_card.current_stage)
+
 
 if __name__ == "__main__":
     app = App()

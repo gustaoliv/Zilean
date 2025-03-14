@@ -8,3 +8,5 @@ class Card:
     epick: str
     estimated_duration: int
     time_spent: int
+    current_stage: str
+    possible_next_stages: list[str]
