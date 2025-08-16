@@ -190,6 +190,7 @@ class FloatingWidget(QWidget):
         self.is_paused = False
         self.elapsed_time = 0
         self.start_time = 0
+        self.rebuilding_ui = False  # Flag to prevent card selection during UI rebuild
         
         # Jira integration
         self.jira_integration: Optional[IBoardIntegration] = None
@@ -264,8 +265,9 @@ class FloatingWidget(QWidget):
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(4 if self.is_collapsed else 8)  # Minimal spacing when collapsed
         
-        # Timer display
-        self.timer_label = QLabel("00:00:00")
+        # Timer display - show current time if running
+        current_time = self.get_current_time_display()
+        self.timer_label = QLabel(current_time)
         self.timer_label.setObjectName("timer")
         header_layout.addWidget(self.timer_label)
         
@@ -434,6 +436,17 @@ class FloatingWidget(QWidget):
                 background-color: rgba({max(0, r-20)}, {max(0, g-20)}, {max(0, b-20)}, 1.0);
             }}
             
+            QPushButton#controlButtonDisabled {{
+                background-color: rgba(128, 128, 128, 0.5);
+                min-width: 24px;
+                min-height: 24px;
+                color: rgba(255, 255, 255, 0.5);
+            }}
+            
+            QPushButton#controlButtonDisabled:hover {{
+                background-color: rgba(128, 128, 128, 0.5);
+            }}
+            
             
             QComboBox {{
                 background-color: rgba(255, 255, 255, 0.1);
@@ -524,6 +537,14 @@ class FloatingWidget(QWidget):
         self.cards = cards
         self.card_combo.clear()
         
+        # Initialize Jira integration for time logging
+        if self.is_configured():
+            self.jira_integration = JiraIntegration(
+                self.config.jira_server,
+                self.config.email,
+                self.config.token
+            )
+        
         if cards:
             # Show more of the issue title - up to 60 characters
             card_names = [f"{card.id}: {card.name[:60]}..." if len(card.name) > 60 
@@ -538,15 +559,24 @@ class FloatingWidget(QWidget):
     
     def on_card_selected(self, card_text: str):
         """Handle card selection"""
-        if not card_text or not self.cards:
+        if not card_text or not self.cards or self.rebuilding_ui:
             return
         
         # Extract card ID from combo text
         card_id = card_text.split(":")[0]
-        self.current_card = next((card for card in self.cards if card.id == card_id), None)
+        new_card = next((card for card in self.cards if card.id == card_id), None)
+        
+        # Only stop timer if actually changing to a different card
+        if new_card and self.current_card and new_card.id != self.current_card.id:
+            if self.is_running or self.is_paused:
+                self.stop_timer()
+        
+        self.current_card = new_card
         
         if self.current_card:
+            # Set elapsed time to current card's time spent (accumulated time)
             self.elapsed_time = self.current_card.time_spent
+            
             self.update_card_display()
     
     def update_card_display(self):
@@ -555,6 +585,33 @@ class FloatingWidget(QWidget):
             self.card_label.setText(f"{self.current_card.id}: {self.current_card.name[:40]}...")
         else:
             self.card_label.setText("No card selected")
+        
+        # Update play button state
+        self.update_play_button_state()
+    
+    def update_play_button_state(self):
+        """Update play button appearance based on timer state"""
+        if hasattr(self, 'play_btn'):
+            if self.is_running:
+                self.play_btn.setText("⏸️")
+                self.play_btn.setEnabled(True)
+                self.play_btn.setObjectName("controlButton")
+            elif self.is_paused:
+                self.play_btn.setText("▶️")
+                self.play_btn.setEnabled(True)
+                self.play_btn.setObjectName("controlButton")
+            else:
+                # Stopped state
+                self.play_btn.setText("▶️")
+                if self.current_card:
+                    self.play_btn.setEnabled(True)
+                    self.play_btn.setObjectName("controlButton")
+                else:
+                    self.play_btn.setEnabled(False)
+                    self.play_btn.setObjectName("controlButtonDisabled")
+            
+            # Re-apply styling to update appearance
+            self.setup_style()
     
     def toggle_collapse(self):
         """Toggle between collapsed and expanded states"""
@@ -579,6 +636,8 @@ class FloatingWidget(QWidget):
     
     def rebuild_ui(self):
         """Rebuild the UI when toggling between states"""
+        self.rebuilding_ui = True  # Set flag to prevent card selection events
+        
         # Clear the current layout
         while self.main_layout.count():
             child = self.main_layout.takeAt(0)
@@ -608,10 +667,17 @@ class FloatingWidget(QWidget):
                     if card.id == self.current_card.id:
                         self.card_combo.setCurrentIndex(i)
                         break
+                # Update the card display after setting selection
+                self.update_card_display()
         
         # Update visibility and styling
         self.update_visibility()
         self.setup_style()
+        
+        # Immediately update timer display to prevent showing 00:00:00
+        self.update_display()
+        
+        self.rebuilding_ui = False  # Clear flag after rebuild is complete
     
     def update_visibility(self):
         """Update widget visibility based on collapse state"""
@@ -626,15 +692,23 @@ class FloatingWidget(QWidget):
     
     def start_timer(self):
         """Start the timer"""
-        if not self.current_card:
+        if not self.current_card or not self.current_card.id:
             QMessageBox.warning(self, "Warning", "Please select a card first!")
             return
         
-        if not self.is_running:
-            self.is_running = True
+        if self.is_paused:
+            # Resume from pause
             self.is_paused = False
+            self.is_running = True
             self.start_time = time.time() - self.elapsed_time
-            self.play_btn.setText("⏸️")
+        else:
+            if not self.is_running:
+                # Start new timer
+                self.is_running = True
+                self.elapsed_time = 0
+                self.start_time = time.time() - self.current_card.time_spent
+        
+        self.update_play_button_state()
     
     def pause_timer(self):
         """Pause the timer"""
@@ -642,41 +716,108 @@ class FloatingWidget(QWidget):
             self.is_running = False
             self.is_paused = True
             self.elapsed_time = time.time() - self.start_time
-            self.play_btn.setText("▶️")
+            self.update_play_button_state()
     
     def stop_timer(self):
         """Stop the timer and log time"""
         if self.is_running or self.is_paused:
+            original_running_state = self.is_running
             self.is_running = False
             self.is_paused = False
             
-            if self.is_running:
-                self.elapsed_time = time.time() - self.start_time
+            print(f"Finished working on card: {self.current_card.name if self.current_card else 'None'}")
             
-            # Log time to Jira (implement this based on your needs)
-            if self.current_card and self.elapsed_time > 60:  # Only log if > 1 minute
-                self.log_time_to_jira()
+            if self.current_card:
+                # Calculate current elapsed time if timer was running
+                if original_running_state:
+                    self.elapsed_time = time.time() - self.start_time
+                
+                # Calculate only the new time worked (excluding already logged time)
+                new_elapsed_time = self.elapsed_time - self.current_card.time_spent
+                
+                print(f"Register elapsed time: {new_elapsed_time}")
+                
+                # Only log if more than 60 seconds
+                if new_elapsed_time < 60:
+                    self.is_paused = True
+                    self.update_play_button_state()
+                    QMessageBox.warning(self, "Warning", "It's only possible to register times greater than 60 seconds")
+                    return
+                
+                # Store the new elapsed time for logging
+                time_to_log = new_elapsed_time
+                
+                # Log time to Jira
+                if self.log_time_to_jira_session(time_to_log):
+                    # Update the card's total time spent
+                    self.current_card.time_spent += int(time_to_log)
+                    # Set elapsed time to show total accumulated time
+                    self.elapsed_time = self.current_card.time_spent
+                else:
+                    # If logging failed, keep the current elapsed time
+                    pass
             
-            self.elapsed_time = 0
-            self.play_btn.setText("▶️")
+            # Don't reset elapsed_time to 0 - keep showing accumulated time
+            self.update_play_button_state()
+            self.update_display()
+    
+    def log_time_to_jira_session(self, time_to_log):
+        """Log a specific time session to Jira"""
+        if self.jira_integration and self.current_card and time_to_log > 0:
+            try:
+                # Save the current time spent temporarily
+                original_time_spent = self.current_card.time_spent
+                
+                # Set the time to log for this session
+                self.current_card.time_spent = int(time_to_log)
+                
+                # Log the time to Jira
+                success = self.jira_integration.add_timespent_to_card(self.current_card)
+                
+                if success:
+                    # Restore original time (will be updated by caller)
+                    self.current_card.time_spent = original_time_spent
+                    QMessageBox.information(self, "Success", f"Logged {int(time_to_log)} seconds to Jira")
+                    return True
+                else:
+                    # Restore original time if failed
+                    self.current_card.time_spent = original_time_spent
+                    QMessageBox.warning(self, "Error", "Failed to log time to Jira")
+                    return False
+                    
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Error logging time to Jira: {str(e)}")
+                # Restore original time if error occurred
+                if 'original_time_spent' in locals():
+                    self.current_card.time_spent = original_time_spent
+                return False
+        return False
     
     def log_time_to_jira(self):
-        """Log elapsed time to Jira"""
-        # This would use your existing JiraIntegration
-        # Implementation depends on your specific requirements
-        pass
+        """Log elapsed time to Jira (legacy method for compatibility)"""
+        return self.log_time_to_jira_session(self.elapsed_time)
+    
+    def get_current_time_display(self):
+        """Get the current time display string"""
+        if self.is_running:
+            current_elapsed = time.time() - self.start_time
+        else:
+            current_elapsed = self.elapsed_time
+        
+        # Format time
+        hours, remainder = divmod(int(current_elapsed), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
     
     def update_display(self):
         """Update timer display"""
         if self.is_running:
             self.elapsed_time = time.time() - self.start_time
         
-        # Format time
-        hours, remainder = divmod(int(self.elapsed_time), 3600)
-        minutes, seconds = divmod(remainder, 60)
-        time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        time_str = self.get_current_time_display()
         
-        self.timer_label.setText(time_str)
+        if hasattr(self, 'timer_label'):
+            self.timer_label.setText(time_str)
     
     def mousePressEvent(self, event):
         """Handle mouse press for dragging"""
