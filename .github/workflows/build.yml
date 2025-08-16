@@ -19,16 +19,16 @@ jobs:
           architecture: 'x64'
 
       - name: Install Dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements_modern.txt
 
       - name: Run PyInstaller
-        run: python -m PyInstaller Zilean.spec
+        run: python build_modern.py
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Zilean
-          path: dist/Zilean.exe
+          path: dist/Zilean.exe  # Note: keeping the same name
 
       - name: Create GitHub Release
         id: create_release
@@ -37,7 +37,11 @@ jobs:
           tag_name: v1.0.${{ github.run_number }}
           name: Release v1.0.${{ github.run_number }}
           body: |
-            Automated release from GitHub Actions.
+            Modern Zilean - Floating Jira Time Tracker
+            - Modern PySide6 interface
+            - Floating widget design
+            - Configurable colors
+            - Better performance
           files: dist/Zilean.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

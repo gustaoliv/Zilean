@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Build script for creating a standalone Modern Zilean executable
+Build script for creating a standalone Zilean executable
 """
 
 import os
@@ -22,7 +22,6 @@ a = Analysis(
     datas=[
         ('Domain', 'Domain'),
         ('Infraestructure', 'Infraestructure'),
-        ('Images/icon.ico', 'Images'),
     ],
     hiddenimports=[
         'PySide6.QtCore',
@@ -56,7 +55,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='ModernZilean',
+    name='Zilean',  # Changed from 'ModernZilean' to 'Zilean'
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -69,8 +68,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='Images/icon.ico',
-    version_file=None,
 )
 '''
     
@@ -79,7 +76,7 @@ exe = EXE(
 
 def build_executable():
     """Build the executable using PyInstaller"""
-    print("🔨 Building Modern Zilean executable...")
+    print("🔨 Building Zilean executable...")
     
     # Check if PyInstaller is installed
     try:
@@ -97,7 +94,7 @@ def build_executable():
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         print("✅ Build completed successfully!")
-        print(f"Executable created at: {Path('dist/ModernZilean.exe').absolute()}")
+        print(f"Executable created at: {Path('dist/Zilean.exe').absolute()}")
         return True
     except subprocess.CalledProcessError as e:
         print(f"❌ Build failed: {e}")
@@ -111,8 +108,8 @@ def main():
         return 1
     
     if build_executable():
-        print("\n🎉 Modern Zilean is ready!")
-        print("Run the executable from: dist/ModernZilean.exe")
+        print("\n🎉 Zilean is ready!")
+        print("Run the executable from: dist/Zilean.exe")
         return 0
     else:
         return 1
