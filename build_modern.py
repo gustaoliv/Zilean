@@ -76,7 +76,7 @@ exe = EXE(
 
 def build_executable():
     """Build the executable using PyInstaller"""
-    print("🔨 Building Zilean executable...")
+    print("Building Zilean executable...")
     
     # Check if PyInstaller is installed
     try:
@@ -93,22 +93,22 @@ def build_executable():
     
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        print("✅ Build completed successfully!")
+        print("Build completed successfully!")
         print(f"Executable created at: {Path('dist/Zilean.exe').absolute()}")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"❌ Build failed: {e}")
+        print(f"Build failed: {e}")
         print(f"Error output: {e.stderr}")
         return False
 
 def main():
     """Main build function"""
     if not Path('modern_zilean.py').exists():
-        print("❌ modern_zilean.py not found!")
+        print("modern_zilean.py not found!")
         return 1
     
     if build_executable():
-        print("\n🎉 Zilean is ready!")
+        print("\nZilean is ready!")
         print("Run the executable from: dist/Zilean.exe")
         return 0
     else:
