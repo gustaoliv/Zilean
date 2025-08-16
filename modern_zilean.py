@@ -679,8 +679,8 @@ class FloatingWidget(QWidget):
         """Update play button appearance based on timer state"""
         if hasattr(self, 'play_btn'):
             if self.is_running:
-                self.play_btn.setText("⏸️")
-                self.play_btn.setEnabled(True)
+                self.play_btn.setText("")
+                self.play_btn.setEnabled(False)
                 self.play_btn.setObjectName("controlButton")
             elif self.is_paused:
                 self.play_btn.setText("▶️")
