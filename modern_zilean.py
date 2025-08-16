@@ -576,15 +576,6 @@ class FloatingWidget(QWidget):
         
         # Use a timer to ensure the size sticks after UI rebuild
         QTimer.singleShot(50, lambda: self.resize(new_width, new_height))
-        
-        # Update position if needed (for top-right positioning)
-        if self.is_collapsed:
-            screen = QApplication.primaryScreen().geometry()
-            x = screen.width() - new_width - 20
-            y = 20
-            self.move(x, y)
-            self.config.widget_position = (x, y)
-            self.config_manager.save(self.config)
     
     def rebuild_ui(self):
         """Rebuild the UI when toggling between states"""
