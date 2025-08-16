@@ -239,7 +239,7 @@ class FloatingWidget(QWidget):
         self.setLayout(self.main_layout)
         
         # Set initial size and position
-        self.resize(450 if not self.is_collapsed else 120, 140 if not self.is_collapsed else 30)
+        self.resize(450 if not self.is_collapsed else 180, 140 if not self.is_collapsed else 60)
         self.position_widget()
         
         # Update visibility
@@ -566,8 +566,8 @@ class FloatingWidget(QWidget):
         self.rebuild_ui()
         
         # Resize to appropriate dimensions
-        new_width = 120 if self.is_collapsed else 450  # Smaller when collapsed
-        new_height = 30 if self.is_collapsed else 140   # Smaller height too
+        new_width = 180 if self.is_collapsed else 450  # Better size when collapsed
+        new_height = 60 if self.is_collapsed else 140   # Better height too
         self.resize(new_width, new_height)
         
         # Force the widget to update its geometry and maintain size
