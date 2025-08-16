@@ -290,9 +290,9 @@ class FloatingWidget(QWidget):
             header_layout.addWidget(self.close_btn)
         
         # Toggle button
-        self.toggle_btn = QPushButton("⬇️" if self.is_collapsed else "⬆️")
+        self.toggle_btn = QPushButton("+" if self.is_collapsed else "-")
         self.toggle_btn.setObjectName("iconButton")
-        self.toggle_btn.setFixedSize(18 if self.is_collapsed else 24, 18 if self.is_collapsed else 24)
+        self.toggle_btn.setFixedSize(28 if self.is_collapsed else 24, 28 if self.is_collapsed else 24)
         self.toggle_btn.clicked.connect(self.toggle_collapse)
         header_layout.addWidget(self.toggle_btn)
         
@@ -304,7 +304,7 @@ class FloatingWidget(QWidget):
         """Setup the expandable content area"""
         self.content_widget = QWidget()
         content_layout = QVBoxLayout()
-        content_layout.setContentsMargins(0, 4, 0, 0)
+        content_layout.setContentsMargins(4, 4, 4, 4)
         content_layout.setSpacing(4)
         
         # Card info
@@ -314,7 +314,7 @@ class FloatingWidget(QWidget):
         
         # Control buttons
         controls_layout = QHBoxLayout()
-        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setContentsMargins(10, 10, 10, 10)
         
         self.play_btn = QPushButton("▶️")
         self.play_btn.setObjectName("controlButton")
@@ -422,8 +422,8 @@ class FloatingWidget(QWidget):
             
             QPushButton#controlButton {{
                 background-color: rgba({r}, {g}, {b}, 0.8);
-                min-width: 28px;
-                min-height: 28px;
+                min-width: 24px;
+                min-height: 24px;
             }}
             
             QPushButton#controlButton:hover {{
