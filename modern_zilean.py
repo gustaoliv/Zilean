@@ -283,6 +283,14 @@ class FloatingWidget(QWidget):
         if not self.is_collapsed:  # Only show settings button when expanded
             header_layout.addWidget(self.settings_btn)
         
+        # Reload button (only show when expanded)
+        if not self.is_collapsed:
+            self.reload_btn = QPushButton("🔄")
+            self.reload_btn.setObjectName("iconButton")
+            self.reload_btn.setFixedSize(24, 24)
+            self.reload_btn.clicked.connect(self.reload_cards)
+            header_layout.addWidget(self.reload_btn)
+        
         # Close button (only show when expanded)
         if not self.is_collapsed:
             self.close_btn = QPushButton("✕")
@@ -531,6 +539,84 @@ class FloatingWidget(QWidget):
         self.jira_worker.cards_loaded.connect(self.on_cards_loaded)
         self.jira_worker.error_occurred.connect(self.on_jira_error)
         self.jira_worker.start()
+    
+    def reload_cards(self):
+        """Reload cards from Jira and refresh the interface"""
+        if not self.is_configured():
+            QMessageBox.warning(self, "Warning", "Please configure Jira settings first!")
+            return
+        
+        # Disable reload button during reload
+        if hasattr(self, 'reload_btn'):
+            self.reload_btn.setEnabled(False)
+            self.reload_btn.setText("⏳")
+        
+        # Store current card ID to restore selection after reload
+        current_card_id = self.current_card.id if self.current_card else None
+        
+        # Load cards
+        self.jira_worker = JiraWorker(self.config)
+        self.jira_worker.cards_loaded.connect(lambda cards: self.on_cards_reloaded(cards, current_card_id))
+        self.jira_worker.error_occurred.connect(self.on_reload_error)
+        self.jira_worker.start()
+    
+    def on_cards_reloaded(self, cards: List[Card], previous_card_id: str):
+        """Handle reloaded cards and restore selection"""
+        self.cards = cards
+        
+        # Re-enable reload button
+        if hasattr(self, 'reload_btn'):
+            self.reload_btn.setEnabled(True)
+            self.reload_btn.setText("🔄")
+        
+        # Initialize Jira integration for time logging
+        if self.is_configured():
+            self.jira_integration = JiraIntegration(
+                self.config.jira_server,
+                self.config.email,
+                self.config.token
+            )
+        
+        # Update combo box
+        if hasattr(self, 'card_combo'):
+            self.card_combo.clear()
+            
+            if cards:
+                # Show more of the issue title - up to 60 characters
+                card_names = [f"{card.id}: {card.name[:60]}..." if len(card.name) > 60 
+                             else f"{card.id}: {card.name}" for card in cards]
+                self.card_combo.addItems(card_names)
+                
+                # Try to restore previous selection
+                if previous_card_id:
+                    for i, card in enumerate(cards):
+                        if card.id == previous_card_id:
+                            self.card_combo.setCurrentIndex(i)
+                            self.current_card = card
+                            # Update elapsed time with refreshed card data
+                            self.elapsed_time = card.time_spent
+                            break
+                    else:
+                        # Previous card not found, select first card
+                        self.current_card = cards[0]
+                        self.elapsed_time = cards[0].time_spent
+                else:
+                    # No previous card, select first
+                    self.current_card = cards[0]
+                    self.elapsed_time = cards[0].time_spent
+                
+                self.update_card_display()
+        
+        QMessageBox.information(self, "Success", f"Reloaded {len(cards)} cards from Jira")
+    
+    def on_reload_error(self, error: str):
+        """Handle reload errors"""
+        # Re-enable reload button
+        if hasattr(self, 'reload_btn'):
+            self.reload_btn.setEnabled(True)
+            self.reload_btn.setText("🔄")
+        
+        QMessageBox.warning(self, "Reload Error", f"Failed to reload cards: {error}")
     
     def on_cards_loaded(self, cards: List[Card]):
         """Handle loaded cards"""
