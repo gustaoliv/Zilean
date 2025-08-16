@@ -19,7 +19,7 @@ jobs:
           architecture: 'x64'
 
       - name: Install Dependencies
-        run: pip install -r requirements_modern.txt
+        run: pip install -r requirements.txt
 
       - name: Run PyInstaller
         run: python build_modern.py
