@@ -535,6 +535,9 @@ class FloatingWidget(QWidget):
         if not self.is_configured():
             return
         
+        # Set loading state
+        self.set_loading_state()
+        
         self.jira_worker = JiraWorker(self.config)
         self.jira_worker.cards_loaded.connect(self.on_cards_loaded)
         self.jira_worker.error_occurred.connect(self.on_jira_error)
@@ -553,6 +556,9 @@ class FloatingWidget(QWidget):
         
         # Store current card ID to restore selection after reload
         current_card_id = self.current_card.id if self.current_card else None
+        
+        # Set loading state
+        self.set_loading_state()
         
         # Load cards
         self.jira_worker = JiraWorker(self.config)
@@ -616,12 +622,26 @@ class FloatingWidget(QWidget):
             self.reload_btn.setEnabled(True)
             self.reload_btn.setText("🔄")
         
+        # Re-enable card combo and show error state
+        if hasattr(self, 'card_combo'):
+            self.card_combo.setEnabled(True)
+            self.card_combo.clear()
+            self.card_combo.addItem("Failed to reload issues")
+        
+        # Update card display
+        if hasattr(self, 'card_label'):
+            self.card_label.setText("Failed to reload issues")
+        
         QMessageBox.warning(self, "Reload Error", f"Failed to reload cards: {error}")
     
     def on_cards_loaded(self, cards: List[Card]):
         """Handle loaded cards"""
         self.cards = cards
-        self.card_combo.clear()
+        
+        # Re-enable card combo
+        if hasattr(self, 'card_combo'):
+            self.card_combo.setEnabled(True)
+            self.card_combo.clear()
         
         # Initialize Jira integration for time logging
         if self.is_configured():
@@ -637,10 +657,51 @@ class FloatingWidget(QWidget):
                          else f"{card.id}: {card.name}" for card in cards]
             self.card_combo.addItems(card_names)
             self.current_card = cards[0]
+            self.elapsed_time = cards[0].time_spent
             self.update_card_display()
+        else:
+            # No cards found
+            self.card_combo.addItem("No issues found")
+            self.current_card = None
+            self.elapsed_time = 0
+            if hasattr(self, 'card_label'):
+                self.card_label.setText("No issues found")
+            self.update_play_button_state()
+    
+    def set_loading_state(self):
+        """Set the UI to loading state"""
+        # Clear current card selection
+        self.current_card = None
+        self.elapsed_time = 0
+        
+        # Update card combo to show loading message
+        if hasattr(self, 'card_combo'):
+            self.card_combo.clear()
+            self.card_combo.addItem("Loading issues...")
+            self.card_combo.setEnabled(False)
+        
+        # Update card display
+        if hasattr(self, 'card_label'):
+            self.card_label.setText("Loading issues...")
+        
+        # Update play button state
+        self.update_play_button_state()
+        
+        # Update timer display
+        self.update_display()
     
     def on_jira_error(self, error: str):
         """Handle Jira errors"""
+        # Re-enable card combo
+        if hasattr(self, 'card_combo'):
+            self.card_combo.setEnabled(True)
+            self.card_combo.clear()
+            self.card_combo.addItem("Failed to load issues")
+        
+        # Update card display
+        if hasattr(self, 'card_label'):
+            self.card_label.setText("Failed to load issues")
+        
         QMessageBox.warning(self, "Jira Error", f"Failed to load cards: {error}")
     
     def on_card_selected(self, card_text: str):
@@ -668,7 +729,7 @@ class FloatingWidget(QWidget):
     def update_card_display(self):
         """Update card information display"""
         if self.current_card:
-            self.card_label.setText(f"{self.current_card.id}: {self.current_card.name[:40]}...")
+            self.card_label.setText(f"{self.current_card.id}: {self.current_card.name[:80]}...")
         else:
             self.card_label.setText("No card selected")
         
@@ -679,7 +740,6 @@ class FloatingWidget(QWidget):
         """Update play button appearance based on timer state"""
         if hasattr(self, 'play_btn'):
             if self.is_running:
-                self.play_btn.setText("")
                 self.play_btn.setEnabled(False)
                 self.play_btn.setObjectName("controlButton")
             elif self.is_paused:
@@ -694,7 +754,7 @@ class FloatingWidget(QWidget):
                     self.play_btn.setObjectName("controlButton")
                 else:
                     self.play_btn.setEnabled(False)
-                    self.play_btn.setObjectName("controlButtonDisabled")
+                    self.play_btn.setObjectName("controlButton")
             
             # Re-apply styling to update appearance
             self.setup_style()
