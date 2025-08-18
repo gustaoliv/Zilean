@@ -262,7 +262,7 @@ class FloatingWidget(QWidget):
     def setup_header(self):
         """Setup the header with timer and settings button"""
         header_layout = QHBoxLayout()
-        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setContentsMargins(4, 4, 4, 4)
         header_layout.setSpacing(4 if self.is_collapsed else 8)  # Minimal spacing when collapsed
         
         # Timer display - show current time if running
@@ -378,7 +378,7 @@ class FloatingWidget(QWidget):
             
             QPushButton#iconButton {{
                 background-color: rgba(255, 255, 255, 0.1);
-                border-radius: 8px;
+                border-radius: 12px;
                 padding: 1px;
                 font-size: 10px;
             }}
@@ -981,12 +981,13 @@ class FloatingWidget(QWidget):
     
     def closeEvent(self, event):
         """Handle close event"""
+        self.stop_timer()
         event.ignore()
         self.hide()
         if hasattr(self, 'tray_icon'):
             self.tray_icon.showMessage(
                 "Zilean",
-                "Application was minimized to tray",
+                "Application successfully closed",
                 QSystemTrayIcon.Information,
                 2000
             )
