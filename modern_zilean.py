@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
 """
 Modern Zilean - Floating Jira Time Tracker Widget
-A sleek, always-on-top time tracking widget for Jira integration
+A sleek, always-on-top time tracking widget for Jira integration with time tracking reports
 """
-
 import sys
 import json
 import time
 from pathlib import Path
 from typing import Optional, List
 from dataclasses import dataclass
-
+from datetime import datetime, timedelta
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QPushButton, QComboBox, QSystemTrayIcon, 
     QMenu, QDialog, QFormLayout, QLineEdit, QMessageBox,
-    QGraphicsDropShadowEffect
+    QGraphicsDropShadowEffect, QTextEdit, QScrollArea
 )
 from PySide6.QtCore import (
     Qt, QTimer, QPropertyAnimation, QEasingCurve, 
@@ -28,6 +27,366 @@ from Domain.Models.Card import Card
 from Domain.Interfaces.IBoardIntegration import IBoardIntegration
 from Infraestructure.JiraIntegration import JiraIntegration
 
+@dataclass
+class TimeEntry:
+    """Represents a time log entry"""
+    card_id: str
+    card_name: str
+    duration_seconds: int
+    timestamp: str  # ISO format datetime
+    
+    def to_dict(self):
+        return {
+            'card_id': self.card_id,
+            'card_name': self.card_name,
+            'duration_seconds': self.duration_seconds,
+            'timestamp': self.timestamp
+        }
+    
+    @staticmethod
+    def from_dict(data):
+        return TimeEntry(
+            card_id=data['card_id'],
+            card_name=data['card_name'],
+            duration_seconds=data['duration_seconds'],
+            timestamp=data['timestamp']
+        )
+
+class TimeLogger:
+    """Handles time logging to local file"""
+    
+    def __init__(self, log_path: str = "time_logs.json"):
+        self.log_path = Path(log_path)
+        self.entries: List[TimeEntry] = []
+        self.load_entries()
+    
+    def load_entries(self):
+        """Load entries from file"""
+        if self.log_path.exists():
+            try:
+                with open(self.log_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.entries = [TimeEntry.from_dict(entry) for entry in data]
+            except Exception as e:
+                print(f"Error loading time logs: {e}")
+                self.entries = []
+    
+    def save_entries(self):
+        """Save entries to file"""
+        try:
+            with open(self.log_path, 'w', encoding='utf-8') as f:
+                data = [entry.to_dict() for entry in self.entries]
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"Error saving time logs: {e}")
+    
+    def add_entry(self, card_id: str, card_name: str, duration_seconds: int):
+        """Add a new time entry"""
+        entry = TimeEntry(
+            card_id=card_id,
+            card_name=card_name,
+            duration_seconds=duration_seconds,
+            timestamp=datetime.now().isoformat()
+        )
+        self.entries.append(entry)
+        self.save_entries()
+    
+    def get_entries_by_date_range(self, start_date: datetime, end_date: datetime) -> List[TimeEntry]:
+        """Get entries within a date range"""
+        filtered_entries = []
+        for entry in self.entries:
+            entry_date = datetime.fromisoformat(entry.timestamp)
+            if start_date <= entry_date <= end_date:
+                filtered_entries.append(entry)
+        return filtered_entries
+
+class ReportDialog(QDialog):
+    """Dialog to display time tracking reports"""
+    
+    def __init__(self, time_logger: TimeLogger, primary_color: str, parent=None):
+        super().__init__(parent)
+        self.time_logger = time_logger
+        self.primary_color = primary_color
+        self.setup_ui()
+        self.generate_weekly_report()
+    
+    def setup_ui(self):
+        """Setup the report dialog UI"""
+        self.setWindowTitle("Relatório de Tempo")
+        self.resize(700, 600)
+        
+        layout = QVBoxLayout()
+        
+        # Title
+        title = QLabel("📊 Relatório de Tempo Registrado")
+        title.setStyleSheet(f"""
+            font-size: 18px;
+            font-weight: bold;
+            color: {self.primary_color};
+            padding: 10px;
+        """)
+        layout.addWidget(title)
+        
+        # Period selector
+        period_layout = QHBoxLayout()
+        period_layout.addWidget(QLabel("Período:"))
+        
+        self.period_combo = QComboBox()
+        self.period_combo.addItems([
+            "Semana Atual",
+            "Semana Passada",
+            "Últimos 7 dias",
+            "Últimos 30 dias",
+            "Mês Atual"
+        ])
+        self.period_combo.currentTextChanged.connect(self.on_period_changed)
+        period_layout.addWidget(self.period_combo)
+        period_layout.addStretch()
+        
+        layout.addLayout(period_layout)
+        
+        # Report text area with scroll
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        
+        self.report_text = QTextEdit()
+        self.report_text.setReadOnly(True)
+        scroll_area.setWidget(self.report_text)
+        
+        layout.addWidget(scroll_area)
+        
+        # Close button
+        close_btn = QPushButton("Fechar")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
+        
+        self.setLayout(layout)
+        self.apply_style()
+    
+    def apply_style(self):
+        """Apply styling to the dialog"""
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: #2b2b2b;
+                color: white;
+            }}
+            QLabel {{
+                color: white;
+            }}
+            QComboBox {{
+                background-color: #3a3a3a;
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 5px;
+                color: white;
+                min-width: 200px;
+            }}
+            QComboBox:hover {{
+                background-color: #4a4a4a;
+            }}
+            QComboBox::drop-down {{
+                border: none;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: #3a3a3a;
+                border: 1px solid #555;
+                selection-background-color: {self.primary_color};
+                color: white;
+            }}
+            QTextEdit {{
+                background-color: #1e1e1e;
+                border: 1px solid #555;
+                border-radius: 6px;
+                padding: 15px;
+                color: white;
+                font-family: 'Consolas', 'Monaco', monospace;
+                font-size: 13px;
+                line-height: 1.6;
+            }}
+            QPushButton {{
+                background-color: {self.primary_color};
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 20px;
+                font-size: 14px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {self.adjust_color_brightness(self.primary_color, 1.2)};
+            }}
+            QScrollArea {{
+                border: none;
+            }}
+        """)
+    
+    def adjust_color_brightness(self, hex_color: str, factor: float) -> str:
+        """Adjust color brightness by a factor"""
+        hex_color = hex_color.lstrip('#')
+        r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        r = min(255, int(r * factor))
+        g = min(255, int(g * factor))
+        b = min(255, int(b * factor))
+        return f"#{r:02x}{g:02x}{b:02x}"
+    
+    def on_period_changed(self, period: str):
+        """Handle period selection change"""
+        if period == "Semana Atual":
+            self.generate_weekly_report()
+        elif period == "Semana Passada":
+            self.generate_last_week_report()
+        elif period == "Últimos 7 dias":
+            self.generate_last_n_days_report(7)
+        elif period == "Últimos 30 dias":
+            self.generate_last_n_days_report(30)
+        elif period == "Mês Atual":
+            self.generate_current_month_report()
+    
+    def get_week_start_end(self, date: datetime = None) -> tuple:
+        """Get the start and end of the week (Monday to Sunday)"""
+        if date is None:
+            date = datetime.now()
+        
+        # Get Monday of the current week
+        start = date - timedelta(days=date.weekday())
+        start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Get Sunday of the current week
+        end = start + timedelta(days=6, hours=23, minutes=59, seconds=59)
+        
+        return start, end
+    
+    def generate_weekly_report(self):
+        """Generate report for current week"""
+        start_date, end_date = self.get_week_start_end()
+        self.generate_report(start_date, end_date, f"Semana Atual ({start_date.strftime('%d/%m')} - {end_date.strftime('%d/%m')})")
+    
+    def generate_last_week_report(self):
+        """Generate report for last week"""
+        today = datetime.now()
+        last_week = today - timedelta(days=7)
+        start_date, end_date = self.get_week_start_end(last_week)
+        self.generate_report(start_date, end_date, f"Semana Passada ({start_date.strftime('%d/%m')} - {end_date.strftime('%d/%m')})")
+    
+    def generate_last_n_days_report(self, n: int):
+        """Generate report for last N days"""
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=n-1)
+        start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        self.generate_report(start_date, end_date, f"Últimos {n} dias ({start_date.strftime('%d/%m')} - {end_date.strftime('%d/%m')})")
+    
+    def generate_current_month_report(self):
+        """Generate report for current month"""
+        today = datetime.now()
+        start_date = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        # Last day of current month
+        if today.month == 12:
+            end_date = today.replace(year=today.year+1, month=1, day=1) - timedelta(seconds=1)
+        else:
+            end_date = today.replace(month=today.month+1, day=1) - timedelta(seconds=1)
+        
+        self.generate_report(start_date, end_date, f"Mês Atual ({start_date.strftime('%B %Y')})")
+    
+    def format_duration(self, seconds: int) -> str:
+        """Format duration in seconds to readable format"""
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        
+        if hours > 0:
+            return f"{hours}h {minutes}m"
+        else:
+            return f"{minutes}m"
+    
+    def generate_report(self, start_date: datetime, end_date: datetime, period_name: str):
+        """Generate and display report for given date range"""
+        entries = self.time_logger.get_entries_by_date_range(start_date, end_date)
+        
+        if not entries:
+            self.report_text.setHtml(f"""
+                <h2 style='color: {self.primary_color};'>{period_name}</h2>
+                <p style='color: #999; font-size: 14px;'>Nenhum registro encontrado para este período.</p>
+            """)
+            return
+        
+        # Calculate totals
+        total_seconds = sum(entry.duration_seconds for entry in entries)
+        unique_cards = set(entry.card_id for entry in entries)
+        
+        # Group by date
+        entries_by_date = {}
+        for entry in entries:
+            entry_date = datetime.fromisoformat(entry.timestamp).date()
+            if entry_date not in entries_by_date:
+                entries_by_date[entry_date] = []
+            entries_by_date[entry_date].append(entry)
+        
+        # Build HTML report
+        html = f"""
+        <div style='font-family: "Segoe UI", Arial, sans-serif;'>
+            <h2 style='color: {self.primary_color}; margin-bottom: 20px;'>{period_name}</h2>
+            
+            <div style='background-color: #2a2a2a; padding: 15px; border-radius: 8px; margin-bottom: 20px;'>
+                <h3 style='color: {self.primary_color}; margin-top: 0;'>📈 Resumo Geral</h3>
+                <p style='margin: 8px 0;'><strong>⏱️ Total Registrado:</strong> {self.format_duration(total_seconds)}</p>
+                <p style='margin: 8px 0;'><strong>📋 Tarefas Trabalhadas:</strong> {len(unique_cards)}</p>
+            </div>
+        """
+        
+        # Sort dates
+        sorted_dates = sorted(entries_by_date.keys(), reverse=True)
+        
+        # Add daily breakdown
+        weekday_names = {
+            0: 'Segunda-feira',
+            1: 'Terça-feira',
+            2: 'Quarta-feira',
+            3: 'Quinta-feira',
+            4: 'Sexta-feira',
+            5: 'Sábado',
+            6: 'Domingo'
+        }
+        
+        for date in sorted_dates:
+            date_entries = entries_by_date[date]
+            weekday = weekday_names[date.weekday()]
+            date_str = date.strftime('%d/%m/%Y')
+            
+            # Calculate total for the day
+            day_total_seconds = sum(entry.duration_seconds for entry in date_entries)
+            
+            html += f"""
+            <div style='background-color: #252525; padding: 12px; border-radius: 6px; margin-bottom: 15px; border-left: 4px solid {self.primary_color};'>
+                <h4 style='color: {self.primary_color}; margin: 0 0 10px 0;'>
+                    📅 {weekday} - {date_str}
+                    <span style='color: #999; font-weight: normal; font-size: 12px;'>({self.format_duration(day_total_seconds)})</span>
+                </h4>
+            """
+            
+            # Group by card for the day
+            card_times = {}
+            for entry in date_entries:
+                if entry.card_id not in card_times:
+                    card_times[entry.card_id] = {
+                        'name': entry.card_name,
+                        'total_seconds': 0
+                    }
+                card_times[entry.card_id]['total_seconds'] += entry.duration_seconds
+            
+            # Display cards for the day
+            for card_id, data in card_times.items():
+                html += f"""
+                <div style='margin-left: 15px; margin-bottom: 8px;'>
+                    <span style='color: #aaa;'>({card_id})</span> 
+                    <span style='color: white;'>{data['name'][:60]}{'...' if len(data['name']) > 60 else ''}</span>
+                    <span style='color: {self.primary_color}; font-weight: bold;'> → {self.format_duration(data['total_seconds'])}</span>
+                </div>
+                """
+            
+            html += "</div>"
+        
+        html += "</div>"
+        
+        self.report_text.setHtml(html)
 
 @dataclass
 class AppConfig:
@@ -39,7 +398,6 @@ class AppConfig:
     always_on_top: bool = True
     collapsed: bool = False
     primary_color: str = "#8A2BE2"  # Default purple color
-
 
 class ConfigManager:
     """Handles configuration persistence"""
@@ -66,7 +424,6 @@ class ConfigManager:
                 json.dump(config.__dict__, f, indent=2)
         except Exception as e:
             print(f"Error saving config: {e}")
-
 
 class SettingsDialog(QDialog):
     """Settings dialog for Jira configuration"""
@@ -148,7 +505,6 @@ class SettingsDialog(QDialog):
         
         self.accept()
 
-
 class JiraWorker(QThread):
     """Background worker for Jira operations"""
     cards_loaded = Signal(list)
@@ -171,7 +527,6 @@ class JiraWorker(QThread):
         except Exception as e:
             self.error_occurred.emit(str(e))
 
-
 class FloatingWidget(QWidget):
     """Main floating widget for time tracking"""
     
@@ -182,6 +537,9 @@ class FloatingWidget(QWidget):
         self.config_manager = ConfigManager()
         self.config = self.config_manager.load()
         
+        # Time logger
+        self.time_logger = TimeLogger()
+        
         # State
         self.cards: List[Card] = []
         self.current_card: Optional[Card] = None
@@ -190,7 +548,7 @@ class FloatingWidget(QWidget):
         self.is_paused = False
         self.elapsed_time = 0
         self.start_time = 0
-        self.rebuilding_ui = False  # Flag to prevent card selection during UI rebuild
+        self.rebuilding_ui = False
         
         # Jira integration
         self.jira_integration: Optional[IBoardIntegration] = None
@@ -222,7 +580,7 @@ class FloatingWidget(QWidget):
         shadow.setOffset(2, 2)
         self.setGraphicsEffect(shadow)
         
-        # Main layout - minimal padding for collapsed mode
+        # Main layout
         self.main_layout = QVBoxLayout()
         if self.is_collapsed:
             self.main_layout.setContentsMargins(6, 4, 6, 4)
@@ -248,11 +606,11 @@ class FloatingWidget(QWidget):
     
     def position_widget(self):
         """Position widget in top-right corner or use saved position"""
-        if self.config.widget_position == (50, 50):  # Default position, move to top-right
+        if self.config.widget_position == (50, 50):
             screen = QApplication.primaryScreen().geometry()
             widget_width = 130 if self.is_collapsed else 450
-            x = screen.width() - widget_width - 20  # 20px margin from right edge
-            y = 20  # 20px margin from top edge
+            x = screen.width() - widget_width - 20
+            y = 20
             self.move(x, y)
             self.config.widget_position = (x, y)
             self.config_manager.save(self.config)
@@ -260,27 +618,35 @@ class FloatingWidget(QWidget):
             self.move(*self.config.widget_position)
     
     def setup_header(self):
-        """Setup the header with timer and settings button"""
+        """Setup the header with timer and buttons"""
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(4, 4, 4, 4)
-        header_layout.setSpacing(4 if self.is_collapsed else 8)  # Minimal spacing when collapsed
+        header_layout.setSpacing(4 if self.is_collapsed else 8)
         
-        # Timer display - show current time if running
+        # Timer display
         current_time = self.get_current_time_display()
         self.timer_label = QLabel(current_time)
         self.timer_label.setObjectName("timer")
         header_layout.addWidget(self.timer_label)
         
-        # Only add stretch when expanded, not when collapsed
         if not self.is_collapsed:
             header_layout.addStretch()
+        
+        # Report button (only show when expanded)
+        if not self.is_collapsed:
+            self.report_btn = QPushButton("📊")
+            self.report_btn.setObjectName("iconButton")
+            self.report_btn.setFixedSize(24, 24)
+            self.report_btn.setToolTip("Ver Relatórios")
+            self.report_btn.clicked.connect(self.show_reports)
+            header_layout.addWidget(self.report_btn)
         
         # Settings button (only show when expanded)
         self.settings_btn = QPushButton("⚙️")
         self.settings_btn.setObjectName("iconButton")
         self.settings_btn.setFixedSize(20 if self.is_collapsed else 24, 20 if self.is_collapsed else 24)
         self.settings_btn.clicked.connect(self.show_settings)
-        if not self.is_collapsed:  # Only show settings button when expanded
+        if not self.is_collapsed:
             header_layout.addWidget(self.settings_btn)
         
         # Reload button (only show when expanded)
@@ -294,7 +660,7 @@ class FloatingWidget(QWidget):
         # Close button (only show when expanded)
         if not self.is_collapsed:
             self.close_btn = QPushButton("✕")
-            self.close_btn.setObjectName("iconButton")  # Use same style as other icon buttons
+            self.close_btn.setObjectName("iconButton")
             self.close_btn.setFixedSize(24, 24)
             self.close_btn.clicked.connect(self.quit_app)
             header_layout.addWidget(self.close_btn)
@@ -344,10 +710,10 @@ class FloatingWidget(QWidget):
         
         controls_layout.addStretch()
         
-        # Card selector with better width for full issue titles
+        # Card selector
         self.card_combo = QComboBox()
         self.card_combo.setObjectName("cardSelector")
-        self.card_combo.setMinimumWidth(250)  # Much wider to show full titles
+        self.card_combo.setMinimumWidth(250)
         self.card_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self.card_combo.currentTextChanged.connect(self.on_card_selected)
         controls_layout.addWidget(self.card_combo)
@@ -455,7 +821,6 @@ class FloatingWidget(QWidget):
                 background-color: rgba(128, 128, 128, 0.5);
             }}
             
-            
             QComboBox {{
                 background-color: rgba(255, 255, 255, 0.1);
                 border: 1px solid rgba(255, 255, 255, 0.2);
@@ -494,26 +859,27 @@ class FloatingWidget(QWidget):
         """Setup update timers"""
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self.update_display)
-        self.update_timer.start(1000)  # Update every second
+        self.update_timer.start(1000)
     
     def setup_system_tray(self):
         """Setup system tray icon"""
         if QSystemTrayIcon.isSystemTrayAvailable():
             self.tray_icon = QSystemTrayIcon(self)
             
-            # Create a simple icon for the system tray
             pixmap = QPixmap(16, 16)
-            pixmap.fill(QColor(138, 43, 226))  # Purple color
+            pixmap.fill(QColor(138, 43, 226))
             icon = QIcon(pixmap)
             self.tray_icon.setIcon(icon)
             
-            # Create tray menu
             tray_menu = QMenu()
             show_action = tray_menu.addAction("Show")
             show_action.triggered.connect(self.show)
             
             settings_action = tray_menu.addAction("Settings")
             settings_action.triggered.connect(self.show_settings)
+            
+            reports_action = tray_menu.addAction("Reports")
+            reports_action.triggered.connect(self.show_reports)
             
             tray_menu.addSeparator()
             quit_action = tray_menu.addAction("Quit")
@@ -530,12 +896,16 @@ class FloatingWidget(QWidget):
             self.config.token
         ])
     
+    def show_reports(self):
+        """Show the reports dialog"""
+        dialog = ReportDialog(self.time_logger, self.config.primary_color, self)
+        dialog.exec()
+    
     def load_cards(self):
         """Load cards from Jira in background"""
         if not self.is_configured():
             return
         
-        # Set loading state
         self.set_loading_state()
         
         self.jira_worker = JiraWorker(self.config)
@@ -544,38 +914,32 @@ class FloatingWidget(QWidget):
         self.jira_worker.start()
     
     def reload_cards(self):
-        """Reload cards from Jira and refresh the interface"""
+        """Reload cards from Jira"""
         if not self.is_configured():
             QMessageBox.warning(self, "Warning", "Please configure Jira settings first!")
             return
         
-        # Disable reload button during reload
         if hasattr(self, 'reload_btn'):
             self.reload_btn.setEnabled(False)
             self.reload_btn.setText("⏳")
         
-        # Store current card ID to restore selection after reload
         current_card_id = self.current_card.id if self.current_card else None
         
-        # Set loading state
         self.set_loading_state()
         
-        # Load cards
         self.jira_worker = JiraWorker(self.config)
         self.jira_worker.cards_loaded.connect(lambda cards: self.on_cards_reloaded(cards, current_card_id))
         self.jira_worker.error_occurred.connect(self.on_reload_error)
         self.jira_worker.start()
     
     def on_cards_reloaded(self, cards: List[Card], previous_card_id: str):
-        """Handle reloaded cards and restore selection"""
+        """Handle reloaded cards"""
         self.cards = cards
         
-        # Re-enable reload button
         if hasattr(self, 'reload_btn'):
             self.reload_btn.setEnabled(True)
             self.reload_btn.setText("🔄")
         
-        # Initialize Jira integration for time logging
         if self.is_configured():
             self.jira_integration = JiraIntegration(
                 self.config.jira_server,
@@ -583,31 +947,25 @@ class FloatingWidget(QWidget):
                 self.config.token
             )
         
-        # Update combo box
         if hasattr(self, 'card_combo'):
             self.card_combo.clear()
             
             if cards:
-                # Show more of the issue title - up to 60 characters
                 card_names = [f"{card.id}: {card.name[:60]}..." if len(card.name) > 60 
                              else f"{card.id}: {card.name}" for card in cards]
                 self.card_combo.addItems(card_names)
                 
-                # Try to restore previous selection
                 if previous_card_id:
                     for i, card in enumerate(cards):
                         if card.id == previous_card_id:
                             self.card_combo.setCurrentIndex(i)
                             self.current_card = card
-                            # Update elapsed time with refreshed card data
                             self.elapsed_time = card.time_spent
                             break
                     else:
-                        # Previous card not found, select first card
                         self.current_card = cards[0]
                         self.elapsed_time = cards[0].time_spent
                 else:
-                    # No previous card, select first
                     self.current_card = cards[0]
                     self.elapsed_time = cards[0].time_spent
                 
@@ -617,18 +975,15 @@ class FloatingWidget(QWidget):
     
     def on_reload_error(self, error: str):
         """Handle reload errors"""
-        # Re-enable reload button
         if hasattr(self, 'reload_btn'):
             self.reload_btn.setEnabled(True)
             self.reload_btn.setText("🔄")
         
-        # Re-enable card combo and show error state
         if hasattr(self, 'card_combo'):
             self.card_combo.setEnabled(True)
             self.card_combo.clear()
             self.card_combo.addItem("Failed to reload issues")
         
-        # Update card display
         if hasattr(self, 'card_label'):
             self.card_label.setText("Failed to reload issues")
         
@@ -638,12 +993,10 @@ class FloatingWidget(QWidget):
         """Handle loaded cards"""
         self.cards = cards
         
-        # Re-enable card combo
         if hasattr(self, 'card_combo'):
             self.card_combo.setEnabled(True)
             self.card_combo.clear()
         
-        # Initialize Jira integration for time logging
         if self.is_configured():
             self.jira_integration = JiraIntegration(
                 self.config.jira_server,
@@ -652,7 +1005,6 @@ class FloatingWidget(QWidget):
             )
         
         if cards:
-            # Show more of the issue title - up to 60 characters
             card_names = [f"{card.id}: {card.name[:60]}..." if len(card.name) > 60 
                          else f"{card.id}: {card.name}" for card in cards]
             self.card_combo.addItems(card_names)
@@ -660,7 +1012,6 @@ class FloatingWidget(QWidget):
             self.elapsed_time = cards[0].time_spent
             self.update_card_display()
         else:
-            # No cards found
             self.card_combo.addItem("No issues found")
             self.current_card = None
             self.elapsed_time = 0
@@ -670,35 +1021,27 @@ class FloatingWidget(QWidget):
     
     def set_loading_state(self):
         """Set the UI to loading state"""
-        # Clear current card selection
         self.current_card = None
         self.elapsed_time = 0
         
-        # Update card combo to show loading message
         if hasattr(self, 'card_combo'):
             self.card_combo.clear()
             self.card_combo.addItem("Loading issues...")
             self.card_combo.setEnabled(False)
         
-        # Update card display
         if hasattr(self, 'card_label'):
             self.card_label.setText("Loading issues...")
         
-        # Update play button state
         self.update_play_button_state()
-        
-        # Update timer display
         self.update_display()
     
     def on_jira_error(self, error: str):
         """Handle Jira errors"""
-        # Re-enable card combo
         if hasattr(self, 'card_combo'):
             self.card_combo.setEnabled(True)
             self.card_combo.clear()
             self.card_combo.addItem("Failed to load issues")
         
-        # Update card display
         if hasattr(self, 'card_label'):
             self.card_label.setText("Failed to load issues")
         
@@ -709,11 +1052,9 @@ class FloatingWidget(QWidget):
         if not card_text or not self.cards or self.rebuilding_ui:
             return
         
-        # Extract card ID from combo text
         card_id = card_text.split(":")[0]
         new_card = next((card for card in self.cards if card.id == card_id), None)
         
-        # Only stop timer if actually changing to a different card
         if new_card and self.current_card and new_card.id != self.current_card.id:
             if self.is_running or self.is_paused:
                 self.stop_timer()
@@ -721,9 +1062,7 @@ class FloatingWidget(QWidget):
         self.current_card = new_card
         
         if self.current_card:
-            # Set elapsed time to current card's time spent (accumulated time)
             self.elapsed_time = self.current_card.time_spent
-            
             self.update_card_display()
     
     def update_card_display(self):
@@ -733,11 +1072,10 @@ class FloatingWidget(QWidget):
         else:
             self.card_label.setText("No card selected")
         
-        # Update play button state
         self.update_play_button_state()
     
     def update_play_button_state(self):
-        """Update play button appearance based on timer state"""
+        """Update play button appearance"""
         if hasattr(self, 'play_btn'):
             if self.is_running:
                 self.play_btn.setEnabled(False)
@@ -747,7 +1085,6 @@ class FloatingWidget(QWidget):
                 self.play_btn.setEnabled(True)
                 self.play_btn.setObjectName("controlButton")
             else:
-                # Stopped state
                 self.play_btn.setText("▶️")
                 if self.current_card:
                     self.play_btn.setEnabled(True)
@@ -756,7 +1093,6 @@ class FloatingWidget(QWidget):
                     self.play_btn.setEnabled(False)
                     self.play_btn.setObjectName("controlButton")
             
-            # Re-apply styling to update appearance
             self.setup_style()
     
     def toggle_collapse(self):
@@ -765,32 +1101,26 @@ class FloatingWidget(QWidget):
         self.config.collapsed = self.is_collapsed
         self.config_manager.save(self.config)
         
-        # Rebuild the entire UI to properly handle layout changes
         self.rebuild_ui()
         
-        # Resize to appropriate dimensions
-        new_width = 180 if self.is_collapsed else 450  # Better size when collapsed
-        new_height = 60 if self.is_collapsed else 140   # Better height too
+        new_width = 180 if self.is_collapsed else 450
+        new_height = 60 if self.is_collapsed else 140
         self.resize(new_width, new_height)
         
-        # Force the widget to update its geometry and maintain size
         self.updateGeometry()
         self.update()
         
-        # Use a timer to ensure the size sticks after UI rebuild
         QTimer.singleShot(50, lambda: self.resize(new_width, new_height))
     
     def rebuild_ui(self):
-        """Rebuild the UI when toggling between states"""
-        self.rebuilding_ui = True  # Set flag to prevent card selection events
+        """Rebuild the UI when toggling"""
+        self.rebuilding_ui = True
         
-        # Clear the current layout
         while self.main_layout.count():
             child = self.main_layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
         
-        # Update layout margins based on state
         if self.is_collapsed:
             self.main_layout.setContentsMargins(6, 4, 6, 4)
             self.main_layout.setSpacing(2)
@@ -798,35 +1128,28 @@ class FloatingWidget(QWidget):
             self.main_layout.setContentsMargins(12, 8, 12, 8)
             self.main_layout.setSpacing(6)
         
-        # Rebuild header and content
         self.setup_header()
         self.setup_content()
         
-        # Repopulate card combo if we have cards
         if self.cards and hasattr(self, 'card_combo'):
             card_names = [f"{card.id}: {card.name[:60]}..." if len(card.name) > 60 
                          else f"{card.id}: {card.name}" for card in self.cards]
             self.card_combo.addItems(card_names)
             if self.current_card:
-                # Find and select the current card
                 for i, card in enumerate(self.cards):
                     if card.id == self.current_card.id:
                         self.card_combo.setCurrentIndex(i)
                         break
-                # Update the card display after setting selection
                 self.update_card_display()
         
-        # Update visibility and styling
         self.update_visibility()
         self.setup_style()
-        
-        # Immediately update timer display to prevent showing 00:00:00
         self.update_display()
         
-        self.rebuilding_ui = False  # Clear flag after rebuild is complete
+        self.rebuilding_ui = False
     
     def update_visibility(self):
-        """Update widget visibility based on collapse state"""
+        """Update widget visibility"""
         self.content_widget.setVisible(not self.is_collapsed)
     
     def show_settings(self):
@@ -843,13 +1166,11 @@ class FloatingWidget(QWidget):
             return
         
         if self.is_paused:
-            # Resume from pause
             self.is_paused = False
             self.is_running = True
             self.start_time = time.time() - self.elapsed_time
         else:
             if not self.is_running:
-                # Start new timer
                 self.is_running = True
                 self.elapsed_time = 0
                 self.start_time = time.time() - self.current_card.time_spent
@@ -874,83 +1195,69 @@ class FloatingWidget(QWidget):
             print(f"Finished working on card: {self.current_card.name if self.current_card else 'None'}")
             
             if self.current_card:
-                # Calculate current elapsed time if timer was running
                 if original_running_state:
                     self.elapsed_time = time.time() - self.start_time
                 
-                # Calculate only the new time worked (excluding already logged time)
                 new_elapsed_time = self.elapsed_time - self.current_card.time_spent
                 
                 print(f"Register elapsed time: {new_elapsed_time}")
                 
-                # Only log if more than 60 seconds
                 if new_elapsed_time < 60:
                     self.is_paused = True
                     self.update_play_button_state()
                     QMessageBox.warning(self, "Warning", "It's only possible to register times greater than 60 seconds")
                     return
                 
-                # Store the new elapsed time for logging
                 time_to_log = new_elapsed_time
                 
-                # Log time to Jira
                 if self.log_time_to_jira_session(time_to_log):
-                    # Update the card's total time spent
+                    # Log to local file
+                    self.time_logger.add_entry(
+                        self.current_card.id,
+                        self.current_card.name,
+                        int(time_to_log)
+                    )
+                    
                     self.current_card.time_spent += int(time_to_log)
-                    # Set elapsed time to show total accumulated time
                     self.elapsed_time = self.current_card.time_spent
                 else:
-                    # If logging failed, keep the current elapsed time
                     pass
             
-            # Don't reset elapsed_time to 0 - keep showing accumulated time
             self.update_play_button_state()
             self.update_display()
     
     def log_time_to_jira_session(self, time_to_log):
-        """Log a specific time session to Jira"""
+        """Log time to Jira"""
         if self.jira_integration and self.current_card and time_to_log > 0:
             try:
-                # Save the current time spent temporarily
                 original_time_spent = self.current_card.time_spent
-                
-                # Set the time to log for this session
                 self.current_card.time_spent = int(time_to_log)
                 
-                # Log the time to Jira
                 success = self.jira_integration.add_timespent_to_card(self.current_card)
                 
                 if success:
-                    # Restore original time (will be updated by caller)
                     self.current_card.time_spent = original_time_spent
                     QMessageBox.information(self, "Success", f"Logged {int(time_to_log)} seconds to Jira")
                     return True
                 else:
-                    # Restore original time if failed
                     self.current_card.time_spent = original_time_spent
                     QMessageBox.warning(self, "Error", "Failed to log time to Jira")
                     return False
                     
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Error logging time to Jira: {str(e)}")
-                # Restore original time if error occurred
                 if 'original_time_spent' in locals():
                     self.current_card.time_spent = original_time_spent
                 return False
         return False
     
-    def log_time_to_jira(self):
-        """Log elapsed time to Jira (legacy method for compatibility)"""
-        return self.log_time_to_jira_session(self.elapsed_time)
-    
     def get_current_time_display(self):
-        """Get the current time display string"""
+        """Get current time display string"""
         if self.is_running:
             current_elapsed = time.time() - self.start_time
         else:
             current_elapsed = self.elapsed_time
         
-        # Format time
         hours, remainder = divmod(int(current_elapsed), 3600)
         minutes, seconds = divmod(remainder, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
@@ -997,18 +1304,15 @@ class FloatingWidget(QWidget):
         self.config_manager.save(self.config)
         QApplication.quit()
 
-
 def main():
     """Main application entry point"""
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     
-    # Create and show the floating widget
     widget = FloatingWidget()
     widget.show()
     
     sys.exit(app.exec())
-
 
 if __name__ == "__main__":
     main()
