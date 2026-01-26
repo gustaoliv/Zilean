@@ -24,6 +24,146 @@ from PySide6.QtGui import QFont, QIcon, QPixmap, QPainter, QColor
 
 # Import existing domain models
 from Domain.Models.Card import Card
+
+
+class TimeProgressColorManager:
+    """Manages color coding for timer display based on time progress"""
+    
+    def __init__(self, primary_color: str):
+        """Initialize with primary color and define color states"""
+        self.primary_color = primary_color
+        self.colors = {
+            'gray': '#808080',      # No time spent
+            'green': '#28a745',     # On track (< 80%)
+            'yellow': '#ffc107',    # Warning (80-100%)
+            'red': '#dc3545'        # Over budget (> 100%)
+        }
+    
+    def get_progress_color(self, time_spent: int, estimated_duration: int) -> str:
+        """Calculate appropriate color based on time progress
+        
+        Args:
+            time_spent: Time spent in seconds
+            estimated_duration: Estimated duration in seconds
+            
+        Returns:
+            Hex color string representing progress state
+        """
+        # Handle edge cases
+        if estimated_duration <= 0 or time_spent < 0:
+            return self.colors['gray']
+        
+        if time_spent == 0:
+            return self.colors['gray']
+        
+        progress_ratio = time_spent / estimated_duration
+        
+        if progress_ratio < 0.8:
+            return self.colors['green']
+        elif progress_ratio <= 1.0:
+            return self.colors['yellow']
+        else:
+            return self.colors['red']
+    
+    def get_progress_percentage(self, time_spent: int, estimated_duration: int) -> float:
+        """Calculate progress percentage
+        
+        Args:
+            time_spent: Time spent in seconds
+            estimated_duration: Estimated duration in seconds
+            
+        Returns:
+            Progress percentage (0.0 to 100.0+)
+        """
+        # Handle edge cases
+        if estimated_duration <= 0 or time_spent < 0:
+            return 0.0
+        
+        return (time_spent / estimated_duration) * 100.0
+
+
+class IdleTimeTracker:
+    """Tracks idle time and determines when notifications should be shown"""
+    
+    def __init__(self):
+        """Initialize idle time tracking"""
+        self.app_start_time = time.time()
+        self.last_activity_time = time.time()
+        self.last_notification_time = 0
+        self.notification_interval = 600  # 10 minutes in seconds
+        self.idle_threshold = 600  # 10 minutes in seconds
+    
+    def update_activity(self):
+        """Called when timer starts/resumes to update activity time"""
+        self.last_activity_time = time.time()
+    
+    def check_idle_status(self) -> bool:
+        """Check if application is in idle state requiring notification
+        
+        Returns:
+            True if idle notification should be triggered
+        """
+        current_time = time.time()
+        app_uptime = current_time - self.app_start_time
+        time_since_activity = current_time - self.last_activity_time
+        
+        # App must be open for at least 10 minutes
+        if app_uptime < self.idle_threshold:
+            return False
+        
+        # Timer must be idle for at least 10 minutes
+        if time_since_activity < self.idle_threshold:
+            return False
+        
+        return True
+    
+    def should_notify(self) -> bool:
+        """Determine if notification should be shown based on timing
+        
+        Returns:
+            True if notification should be displayed
+        """
+        if not self.check_idle_status():
+            return False
+        
+        current_time = time.time()
+        time_since_last_notification = current_time - self.last_notification_time
+        
+        # Only notify if enough time has passed since last notification
+        if time_since_last_notification >= self.notification_interval:
+            self.last_notification_time = current_time
+            return True
+        
+        return False
+
+
+class NotificationManager:
+    """Manages idle time notifications through system tray"""
+    
+    def __init__(self, tray_icon: QSystemTrayIcon):
+        """Initialize with system tray icon
+        
+        Args:
+            tray_icon: QSystemTrayIcon instance for showing notifications
+        """
+        self.tray_icon = tray_icon
+    
+    def show_idle_notification(self):
+        """Display idle time notification"""
+        try:
+            if self.tray_icon and self.tray_icon.isVisible():
+                self.tray_icon.showMessage(
+                    "Zilean - Timer Idle",
+                    "Your timer has been idle for 10+ minutes. Don't forget to track your work!",
+                    QSystemTrayIcon.Information,
+                    5000  # 5 seconds
+                )
+            else:
+                # Fallback when system tray is not available
+                print("Idle notification: Your timer has been idle for 10+ minutes. Don't forget to track your work!")
+        except Exception as e:
+            # Gracefully handle notification failures
+            print(f"Failed to show notification: {e}")
 from Domain.Interfaces.IBoardIntegration import IBoardIntegration
 from Infraestructure.JiraIntegration import JiraIntegration
 
@@ -540,6 +680,11 @@ class FloatingWidget(QWidget):
         # Time logger
         self.time_logger = TimeLogger()
         
+        # Productivity alert components
+        self.color_manager = TimeProgressColorManager(self.config.primary_color)
+        self.idle_tracker = IdleTimeTracker()
+        self.notification_manager = None  # Will be initialized after system tray setup
+        
         # State
         self.cards: List[Card] = []
         self.current_card: Optional[Card] = None
@@ -887,6 +1032,12 @@ class FloatingWidget(QWidget):
             
             self.tray_icon.setContextMenu(tray_menu)
             self.tray_icon.show()
+            
+            # Initialize notification manager with system tray
+            self.notification_manager = NotificationManager(self.tray_icon)
+        else:
+            # Handle case where system tray is not available
+            self.notification_manager = NotificationManager(None)
     
     def is_configured(self) -> bool:
         """Check if Jira is properly configured"""
@@ -1066,13 +1217,46 @@ class FloatingWidget(QWidget):
             self.update_card_display()
     
     def update_card_display(self):
-        """Update card information display"""
+        """Update card information display with progress information"""
         if self.current_card:
-            self.card_label.setText(f"{self.current_card.id}: {self.current_card.name[:80]}...")
+            # Get estimated duration (assuming it's a field on the card)
+            estimated_duration = getattr(self.current_card, 'estimated_duration', 0)
+            
+            # Format the basic card info
+            card_info = f"{self.current_card.id}: {self.current_card.name[:60]}..."
+            
+            # Add progress information if estimated duration exists
+            if estimated_duration > 0:
+                current_time = int(self.elapsed_time)
+                progress_percentage = self.color_manager.get_progress_percentage(
+                    current_time, estimated_duration
+                )
+                
+                # Format time displays
+                current_formatted = self.format_duration_display(current_time)
+                estimated_formatted = self.format_duration_display(estimated_duration)
+                
+                progress_info = f"\n{current_formatted} / {estimated_formatted} ({progress_percentage:.0f}%)"
+                card_info += progress_info
+            
+            self.card_label.setText(card_info)
         else:
             self.card_label.setText("No card selected")
         
         self.update_play_button_state()
+    
+    def format_duration_display(self, seconds: int) -> str:
+        """Format duration in seconds to readable format (e.g., '2h 30m')"""
+        if seconds <= 0:
+            return "0m"
+        
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        
+        if hours > 0:
+            return f"{hours}h {minutes}m"
+        else:
+            return f"{minutes}m"
     
     def update_play_button_state(self):
         """Update play button appearance"""
@@ -1175,6 +1359,9 @@ class FloatingWidget(QWidget):
                 self.elapsed_time = 0
                 self.start_time = time.time() - self.current_card.time_spent
         
+        # Update activity tracking when timer starts
+        self.idle_tracker.update_activity()
+        
         self.update_play_button_state()
     
     def pause_timer(self):
@@ -1192,15 +1379,11 @@ class FloatingWidget(QWidget):
             self.is_running = False
             self.is_paused = False
             
-            print(f"Finished working on card: {self.current_card.name if self.current_card else 'None'}")
-            
             if self.current_card:
                 if original_running_state:
                     self.elapsed_time = time.time() - self.start_time
                 
                 new_elapsed_time = self.elapsed_time - self.current_card.time_spent
-                
-                print(f"Register elapsed time: {new_elapsed_time}")
                 
                 if new_elapsed_time < 60:
                     self.is_paused = True
@@ -1263,14 +1446,33 @@ class FloatingWidget(QWidget):
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
     
     def update_display(self):
-        """Update timer display"""
+        """Update timer display with dynamic colors and idle checking"""
         if self.is_running:
             self.elapsed_time = time.time() - self.start_time
         
         time_str = self.get_current_time_display()
         
         if hasattr(self, 'timer_label'):
+            # Update timer color based on progress
+            if self.current_card and hasattr(self.current_card, 'estimated_duration'):
+                estimated_duration = getattr(self.current_card, 'estimated_duration', 0)
+                # Ensure non-negative elapsed time
+                safe_elapsed_time = max(0, int(self.elapsed_time))
+                progress_color = self.color_manager.get_progress_color(
+                    safe_elapsed_time, 
+                    estimated_duration
+                )
+                self.timer_label.setStyleSheet(f"color: {progress_color};")
+            else:
+                # Fallback to primary color when no estimated duration
+                self.timer_label.setStyleSheet(f"color: {self.config.primary_color};")
+            
             self.timer_label.setText(time_str)
+        
+        # Check for idle status and show notification if needed
+        if not self.is_running and not self.is_paused and self.notification_manager:
+            if self.idle_tracker.should_notify():
+                self.notification_manager.show_idle_notification()
     
     def mousePressEvent(self, event):
         """Handle mouse press for dragging"""

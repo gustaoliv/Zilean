@@ -45,7 +45,8 @@ class JiraIntegration(IBoardIntegration):
 
             card: Card = Card(id=issue.key, 
                               name=issue.fields.summary, 
-                              epick=issue_dict["fields"]["parent"]["fields"]["summary"],
+                            #   epick=issue_dict["fields"]["parent"]["fields"]["summary"],
+                              epick="",
                               estimated_duration=int(duration),
                               time_spent=int(time_spent),
                               current_stage=issue_dict["fields"]["status"]["name"].capitalize(),
